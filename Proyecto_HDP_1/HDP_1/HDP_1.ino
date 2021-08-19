@@ -15,22 +15,26 @@
 #define getciclosreset 0
 #define abriralarrancar 1
 #define registrodefallos 1
-
-#if getciclosread
+#if registrodefallos
+  #define reintentarbombas 0
+#endif
+#if !getciclosread
+  #define onlyvoltcontrol 0
+  #define getcicloswrite 0
+  
+  // No tocar esto
+#else
   #define onlyvoltcontrol 1
   #define getcicloswrite 0
-#else
-
-  #define onlyvoltcontrol 0
-  #define getcicloswrite 1
 #endif
+// No tocar esto
 
 #if registrodefallos
-  #define maxciclosaraddr 20
-  #define maxciclosabaddr 21
-  #define bombaarnosubeaguaaddr 22
-  #define boyaseguridadactivadaaddr 23
-  #define numeroderiegosaddr 24
+  const unsigned int maxciclosaraddr = 20;
+  const unsigned int maxciclosabaddr = 21;
+  const unsigned int bombaarnosubeaguaaddr = 22;
+  const unsigned int boyaseguridadactivadaaddr = 23;
+  const unsigned int numeroderiegosaddr = 24;
 #endif
 
 
@@ -47,8 +51,9 @@ const unsigned long pausa2  = 30000; // tiempo que esta en pausa el programa cua
 const unsigned long pausa3  = 10000; // tiempo que esta en pausa el programa cuando termina de subir al cubo pequeno // en ms
 const unsigned long tiempo4 = 40000; // tiempo que esta subiendo agua al cubo grande // en ms
 const unsigned long pausa5  = 10000; // tiempo que esta en pausa el programa cuando termina de subir agua al cubo grande (despues de vaciar tambien lo hace) // en ms
-const unsigned int maxciclosar = 20; // nº de subidas de agua al cubo grande antes de saltar error si no se llena (util para comprobar fugas o si la bomba de arriba funciona) // TODO implementar esto
-const unsigned int maxciclosab = 2; // nº de subidas de agua al cubo pequeno antes de saltar error si no se llena (util para comprobar fugas o si la bomba de arriba funciona) // TODO implementar esto
+const unsigned int maxciclosar = 160; // nº de subidas de agua al cubo grande antes de saltar error si no se llena (util para comprobar fugas o si la bomba de arriba funciona)
+const unsigned int maxciclosab = 3; // nº de subidas de agua al cubo pequeno antes de saltar error si no se llena (util para comprobar fugas o si la bomba de arriba funciona)
+const unsigned long vcheckinterval = 1000; // tiempo entre mediciones y control de voltaje // en ms
 
 //AJUSTES
 
@@ -94,6 +99,7 @@ bool emicroa;
 bool emicroc;
 
 unsigned long prevmillis;
+unsigned long vmillis;
 
 #if debug
   unsigned long printmillis;
@@ -105,7 +111,7 @@ unsigned long prevmillis;
 
 void setup()
 {
-  #if debug || getciclosread
+  #if debug || getciclosread || registrodefallos
     Serial.begin(115200);
     delay(500);
     Serial.println(F("Iniciando..."));
@@ -146,26 +152,23 @@ void setup()
 
   #endif
 
-  
-
+  int data;
   #if getciclosread
   Serial.println(F("Reading ciclos"));
     addr = 0;
-    bool ok[2];
-    unsigned int data[2];
+    bool ok;
     for(byte i = 0; i<2;i++)
     {
-      EEPROM.get(addr,ok[i]);
-      Serial.println(ok[i]);
+      EEPROM.get(addr,ok);
+      Serial.println(ok);
       addr+=sizeof(bool);
-      EEPROM.get(addr,data[i]);
-      Serial.println(data[i]);
+      EEPROM.get(addr,data);
+      Serial.println(data);
       addr+=sizeof(unsigned int);
     }
   #endif
 
 #if registrodefallos
-  int data;
   Serial.print(F("Superado el numero maximo de ciclos de cupe: "));
   Serial.println(EEPROM.get(maxciclosabaddr,data));
   Serial.print(F("Superado el numero maximo de ciclos de cubo arriba: "));
@@ -176,10 +179,29 @@ void setup()
   Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
   Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
   Serial.println(EEPROM.get(numeroderiegosaddr,data));
+  Serial.println(F("\nPuedes resetear el registro enviando reset\n"));
   if(EEPROM.get(numeroderiegosaddr,ciclosri) == 0)
   {
     ciclosrisw = 1;
   }
+
+  #if !reintentarbombas
+  if (EEPROM.get(maxciclosabaddr,data))
+  {
+    Serial.print(F("Superado el numero maximo de ciclos de cupe en un reinicio anterior, abortando inicio"));
+    error = 1;
+  }
+  if (EEPROM.get(maxciclosaraddr,data))
+  {
+    Serial.print(F("Superado el numero maximo de ciclos de cubo arriba en un reinicio anterior, abortando inicio"));
+    error = 1;
+  }
+  if (EEPROM.get(maxciclosaraddr,data))
+  {
+    Serial.print(F("No succiona agua la bomba de arriba en un reinico anterior, abortando inicio"));
+    error = 1;
+  }
+  #endif
 #endif
 
 #if abriralarrancar
@@ -191,7 +213,10 @@ void setup()
     vital();
 #endif
   regar(0);
-  
+
+  #if debug || getciclosread || registrodefallos
+    Serial.println(F("Todo listo!!!"));
+  #endif
 }
 
 //SETUP
@@ -201,6 +226,11 @@ void setup()
 void loop()
 {
   vital();
+  
+  #if !(getciclosread || getciclosreset || getcicloswrite)
+    errorDetection();
+  #endif
+  
   #if onlyvoltcontrol
     mode = 0;
   #endif
@@ -370,13 +400,43 @@ void loop()
     }
     break;
   }
-  #if !(getciclosread || getciclosreset || getcicloswrite)
-    errorDetection();
-  #endif
-  delay(100);
 }
 
 //LOOP
+
+//SERIALEVENT
+
+#if registrodefallos
+void serialEvent()
+{
+  delay(750);
+  String s = Serial.readStringUntil('\n');
+  if (s.equals("reset"))
+  {
+    Serial.println(F("Reseteando registros"));
+    
+    EEPROM.put(maxciclosabaddr,0);
+    EEPROM.put(maxciclosaraddr,0);
+    EEPROM.put(bombaarnosubeaguaaddr,0);
+    EEPROM.put(boyaseguridadactivadaaddr,0);
+    EEPROM.put(numeroderiegosaddr,0);
+    
+    int data;
+    Serial.print(F("Superado el numero maximo de ciclos de cupe: "));
+    Serial.println(EEPROM.get(maxciclosabaddr,data));
+    Serial.print(F("Superado el numero maximo de ciclos de cubo arriba: "));
+    Serial.println(EEPROM.get(maxciclosaraddr,data));
+    Serial.print(F("No succiona agua la bomba de arriba: "));
+    Serial.println(EEPROM.get(bombaarnosubeaguaaddr,data));
+    Serial.print(F("Se ha activado la boya de seguridad: "));
+    Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
+    Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
+    Serial.println(EEPROM.get(numeroderiegosaddr,data));
+  }
+}
+#endif
+
+//SERIALEVENT
 
 //FUNCIONES
 
@@ -484,16 +544,19 @@ void regar(bool x)
 
 void voltControl()
 {
-  readVolts();
-  for (byte i = 0; i<2; i++)
+  if(vmillis+vcheckinterval<millis())
   {
-    if (volt[i] <= vload[i])
+    readVolts();
+    for (byte i = 0; i<2; i++)
     {
-      digitalWrite(vRele[i],on[i]); // carga
-    }
-    if (volt[i] >= vmax[i])
-    {
-      digitalWrite(vRele[i],!on[i]); // no carga
+      if (volt[i] <= vload[i])
+      {
+        digitalWrite(vRele[i],on[i]); // carga
+      }
+      if (volt[i] >= vmax[i])
+      {
+        digitalWrite(vRele[i],!on[i]); // no carga
+      }
     }
   }
 }
@@ -506,11 +569,11 @@ void updateRelays()
 
 void errorDetection()
 {
-  if(ciclosar>=maxciclosar)
+  if(ciclosar>maxciclosar)
   {
     #if debug
       Serial.print(F("Error al subir agua al cubo grande: superados el numero de ciclos permitidos.\t"));
-      Serial.println(ciclosar);
+      Serial.println(maxciclosar);
     #endif
     #if registrodefallos
       bool aux;
@@ -521,11 +584,11 @@ void errorDetection()
     #endif
     error = 1;
   }
-  if(ciclosab>=maxciclosab)
+  if(ciclosab>maxciclosab)
   {
     #if debug
       Serial.print(F("Error al subir agua al cubo pequeno: superados el numero de ciclos permitidos.\t"));
-      Serial.println(ciclosab);
+      Serial.println(maxciclosab);
     #endif
     #if registrodefallos
       bool aux;
@@ -544,6 +607,12 @@ void errorDetection()
     while(true)
     {
       voltControl();
+      #if registrodefallos
+      if (Serial.available())
+      {
+        serialEvent();
+      }
+      #endif
     }
   }
 }
