@@ -1,3 +1,7 @@
+/*
+
+*/
+
 //LIBRERIAS
 
 #include <EEPROM.h>
@@ -7,14 +11,28 @@
 //AJUSTES
 
 #define debug 0
-#define getciclosread 1
+#define getciclosread 0
+#define getciclosreset 0
+#define abriralarrancar 1
+#define registrodefallos 1
+
 #if getciclosread
   #define onlyvoltcontrol 1
+  #define getcicloswrite 0
 #else
+
   #define onlyvoltcontrol 0
+  #define getcicloswrite 1
 #endif
-#define onlyvoltcontrol 0
-#define getcicloswrite 1
+
+#if registrodefallos
+  #define maxciclosaraddr 20
+  #define maxciclosabaddr 21
+  #define bombaarnosubeaguaaddr 22
+  #define boyaseguridadactivadaaddr 23
+  #define numeroderiegosaddr 24
+#endif
+
 
 const float vmax[2] = {15.7, 15.7}; // voltaje maximo que alcanzan los condensadores // en V 
 const float vload[2] = {14.5, 14.5}; // voltaje de histeresis de los condensadores (a este voltaje comienzan a cargarse los condensadores) (a este voltaje el sistema pasa a modo 1 (ON)) // en V
@@ -60,6 +78,8 @@ byte mode = 0;
 bool error = false;
 unsigned int ciclosar = 0;
 unsigned int ciclosab = 0;
+unsigned int ciclosri = 0;
+bool ciclosrisw = 0;
 
 float volt[2];
 
@@ -85,7 +105,7 @@ unsigned long prevmillis;
 
 void setup()
 {
-  #if debug
+  #if debug || getciclosread
     Serial.begin(115200);
     delay(500);
     Serial.println(F("Iniciando..."));
@@ -110,7 +130,68 @@ void setup()
   pinMode(boyaAb,INPUT);
   pinMode(microa,INPUT);
   pinMode(microc,INPUT);
+
+  unsigned int addr = 0;
+
+  #if getciclosreset
+    Serial.println(F("Reset ciclos"));
+    addr = 0;
+    for(byte i = 0; i<2;i++)
+    {
+      EEPROM.put(addr,0);
+      addr+=sizeof(bool);
+      EEPROM.put(addr,0);
+      addr+=sizeof(unsigned int);
+    }
+
+  #endif
+
+  
+
+  #if getciclosread
+  Serial.println(F("Reading ciclos"));
+    addr = 0;
+    bool ok[2];
+    unsigned int data[2];
+    for(byte i = 0; i<2;i++)
+    {
+      EEPROM.get(addr,ok[i]);
+      Serial.println(ok[i]);
+      addr+=sizeof(bool);
+      EEPROM.get(addr,data[i]);
+      Serial.println(data[i]);
+      addr+=sizeof(unsigned int);
+    }
+  #endif
+
+#if registrodefallos
+  int data;
+  Serial.print(F("Superado el numero maximo de ciclos de cupe: "));
+  Serial.println(EEPROM.get(maxciclosabaddr,data));
+  Serial.print(F("Superado el numero maximo de ciclos de cubo arriba: "));
+  Serial.println(EEPROM.get(maxciclosaraddr,data));
+  Serial.print(F("No succiona agua la bomba de arriba: "));
+  Serial.println(EEPROM.get(bombaarnosubeaguaaddr,data));
+  Serial.print(F("Se ha activado la boya de seguridad: "));
+  Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
+  Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
+  Serial.println(EEPROM.get(numeroderiegosaddr,data));
+  if(EEPROM.get(numeroderiegosaddr,ciclosri) == 0)
+  {
+    ciclosrisw = 1;
+  }
+#endif
+
+#if abriralarrancar
+  #if debug
+    Serial.println(F("Vaciando el deposito antes de comenzar"));
+  #endif
+  regar(1);
+  while (eboyaAb != 0)
+    vital();
+#endif
   regar(0);
+  
 }
 
 //SETUP
@@ -123,10 +204,6 @@ void loop()
   #if onlyvoltcontrol
     mode = 0;
   #endif
-  if (error)
-  {
-    mode = 0;
-  }
   switch (mode)
   {
     case 0: // apagado
@@ -156,13 +233,14 @@ void loop()
     {
       ebombaAb = 0;
       mode = 3; // pausa cupe --> arr
+      ciclosab++;
       #if getcicloswrite
-      bool aux;
-      if (!EEPROM.get(0,aux))
-      {
-        EEPROM.put(0,true);
-        EEPROM.put(0+sizeof(bool),ciclosab);
-      }
+        bool aux;
+        if (!EEPROM.get(0,aux))
+        {
+          EEPROM.put(0,true);
+          EEPROM.put(0+sizeof(bool),ciclosab);
+        }
       #endif
       ciclosab = 0;
       #if debug
@@ -211,6 +289,20 @@ void loop()
         Serial.println(mode);
         delay(2000);
       #endif
+      if(eboyaCuPe == 1)
+      {
+        error = 1;
+        #if registrodefallos
+          bool aux;
+          if(EEPROM.get(maxciclosabaddr,aux) == 0)
+          {
+            EEPROM.put(maxciclosabaddr,1);
+          }
+        #endif
+        #if debug
+          Serial.println(F("La bomba de arriba no funciona, no sube agua al cubo grande"));
+        #endif
+      }
       prevmillis = millis();
     }
     else if (eboyaAr == 0)
@@ -220,13 +312,14 @@ void loop()
     else
     {
       ebombaAr = 0;
+      ciclosar++;
       #if getcicloswrite
-      bool aux;
-      if (!EEPROM.get(sizeof(bool)+sizeof(int),aux))
-      {
-        EEPROM.put(sizeof(bool)+sizeof(int),true);
-        EEPROM.put(sizeof(bool)+sizeof(int)+sizeof(bool),ciclosab);
-      }
+        bool aux;
+        if (!EEPROM.get(sizeof(bool)+sizeof(int),aux))
+        {
+          EEPROM.put(sizeof(bool)+sizeof(unsigned int),true);
+          EEPROM.put(sizeof(bool)+sizeof(unsigned int)+sizeof(bool),ciclosar);
+        }
       #endif
       ciclosar = 0;
       mode = 6; // vaciar
@@ -256,6 +349,13 @@ void loop()
     if (eboyaAb == 0) // invertido
     {
       regar(0);
+      #if registrodefallos
+        if (ciclosrisw)
+        {
+          ciclosri++;
+          EEPROM.put(numeroderiegosaddr,ciclosri);
+        }
+      #endif
       mode = 5; // pausa arr --> cupe
       #if debug
         Serial.print(F("MODE set to: "));
@@ -270,7 +370,10 @@ void loop()
     }
     break;
   }
-  errorDetection();
+  #if !(getciclosread || getciclosreset || getcicloswrite)
+    errorDetection();
+  #endif
+  delay(100);
 }
 
 //LOOP
@@ -296,6 +399,13 @@ void checkMode()
   if (mode != 0 && (volt[0] < vmin[0] || volt[1] < vmin[1] || eboyaSeg == 0)) // apagar si
   {
     mode = 0;
+    #if registrodefallos
+      bool aux;
+      if(eboyaSeg == 0 && EEPROM.get(boyaseguridadactivadaaddr,aux) == 0)
+      {
+        EEPROM.put(boyaseguridadactivadaaddr,1);
+      }
+    #endif
     #if debug
       Serial.print(F("MODE set to: "));
       Serial.print(mode);
@@ -303,7 +413,7 @@ void checkMode()
       delay(2000);
     #endif
   }
-  else if (mode == 0 && (volt[0] >= vload[0] && volt[1] >= vload[1]) && eboyaSeg == 1) // encender si
+  else if (!onlyvoltcontrol && mode == 0 && (volt[0] >= vload[0] && volt[1] >= vload[1]) && eboyaSeg == 1) // encender si
   {
     mode = 1;
     #if debug
@@ -398,27 +508,39 @@ void errorDetection()
 {
   if(ciclosar>=maxciclosar)
   {
-    ebombaAr = 0;
-    ebombaAb = 0;
-    updateRelays();
     #if debug
       Serial.print(F("Error al subir agua al cubo grande: superados el numero de ciclos permitidos.\t"));
       Serial.println(ciclosar);
     #endif
-    while(true)
-    {
-      voltControl();
-    }
+    #if registrodefallos
+      bool aux;
+      if(EEPROM.get(bombaarnosubeaguaaddr,aux) == 0)
+      {
+        EEPROM.put(bombaarnosubeaguaaddr,1);
+      }
+    #endif
+    error = 1;
   }
   if(ciclosab>=maxciclosab)
   {
-    ebombaAr = 0;
-    ebombaAb = 0;
-    updateRelays();
     #if debug
       Serial.print(F("Error al subir agua al cubo pequeno: superados el numero de ciclos permitidos.\t"));
       Serial.println(ciclosab);
     #endif
+    #if registrodefallos
+      bool aux;
+      if(EEPROM.get(maxciclosabaddr,aux) == 0)
+      {
+        EEPROM.put(maxciclosabaddr,1);
+      }
+    #endif
+    error = 1;
+  }
+  if (error)
+  {
+    ebombaAr = 0;
+    ebombaAb = 0;
+    updateRelays();
     while(true)
     {
       voltControl();
