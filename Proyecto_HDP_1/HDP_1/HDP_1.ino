@@ -1,5 +1,6 @@
 /*
-
+  Si escribes off, todo el sistema se apaga (sigue controlando voltaje), como si hubiera un fallo
+  Si escribes reset, borras el registro de fallos y vuelve a funcionar todo el sistema
 */
 
 //LIBRERIAS
@@ -10,17 +11,17 @@
 
 //AJUSTES
 
-#define debug 0
-#define getciclosread 0
-#define getciclosreset 0
-#define abriralarrancar 1
-#define registrodefallos 1
+#define debug 0 // para ver info extra
+#define getciclosread 0 // ver cuantos ciclos lleva
+#define getciclosreset 0 // resetear los ciclos
+#define abriralarrancar 0 // regar al iniciar
+#define registrodefallos 1 // ver los fallos y las veces que ha regado
 #if registrodefallos
-  #define reintentarbombas 0
+  #define reintentarbombas 0 // si hay algun fallo, reintentar al dia siguiente
 #endif
 #if !getciclosread
-  #define onlyvoltcontrol 0
-  #define getcicloswrite 0
+  #define onlyvoltcontrol 0 // solo controlar el voltaje // lo mismo que poner off si registrodefallos vale 1
+  #define getcicloswrite 0 // guardar el numero de ciclos
   
   // No tocar esto
 #else
@@ -31,16 +32,18 @@
 
 #if registrodefallos
   const unsigned int maxciclosaraddr = 20;
-  const unsigned int maxciclosabaddr = 21;
-  const unsigned int bombaarnosubeaguaaddr = 22;
-  const unsigned int boyaseguridadactivadaaddr = 23;
-  const unsigned int numeroderiegosaddr = 24;
+  const unsigned int maxciclosabaddr = 30;
+  const unsigned int bombaarnosubeaguaaddr = 40;
+  const unsigned int boyaseguridadactivadaaddr = 50;
+  const unsigned int numeroderiegosaddr = 60;
 #endif
 
-
-const float vmax[2] = {15.7, 15.7}; // voltaje maximo que alcanzan los condensadores // en V 
-const float vload[2] = {14.5, 14.5}; // voltaje de histeresis de los condensadores (a este voltaje comienzan a cargarse los condensadores) (a este voltaje el sistema pasa a modo 1 (ON)) // en V
+unsigned const int vRele[2] = {7,12}; // pines de ls reles de voltaje
+const float vmax[2] = {15.7, 13.4}; // voltaje maximo que alcanzan los condensadores // en V 
+const float vload[2] = {14.5, 12.9}; // voltaje de histeresis de los condensadores (a este voltaje comienzan a cargarse los condensadores) (a este voltaje el sistema pasa a modo 1 (ON)) // en V
 const float vmin[2] = {12, 12}; // voltaje minimo de funcionamiento del sistema (con que uno de ellos llegue se para el sistema) // en V
+unsigned const int voltPin[2] = {A1, A0};
+const bool on[2] = {0,1}; // On para cada vRele
 
 #if debug
   const long printTime = 1000; // tiempo entre refresco de datos (solo afecta a la comunicacion serial) // en ms
@@ -59,7 +62,6 @@ const unsigned long vcheckinterval = 1000; // tiempo entre mediciones y control 
 
 //E/S
 
-unsigned const int vRele[2] = {12,7}; // vrele[1] va invertido (apagado (0) = 0, (1) = 1)
 unsigned const int llave = 5;
 unsigned const int bombaAr = 6;
 unsigned const int bombaAb = 4;
@@ -70,10 +72,6 @@ unsigned const int boyaAr = 8;
 unsigned const int boyaAb = 9; // invertida
 unsigned const int microa = 10;
 unsigned const int microc = 11;
-
-unsigned const int voltPin[2] = {A0, A1};
-
-const bool on[2] = {1,0}; // On para cada vRele
 
 //E/S
 
@@ -90,6 +88,7 @@ float volt[2];
 
 bool ebombaAr;
 bool ebombaAb;
+bool load[2] = {1,1};
 
 bool eboyaSeg;
 bool eboyaCuPe;
@@ -98,8 +97,8 @@ bool eboyaAb;
 bool emicroa;
 bool emicroc;
 
-unsigned long prevmillis;
-unsigned long vmillis;
+unsigned long prevmillis = 0;
+unsigned long vmillis = 0;
 
 #if debug
   unsigned long printmillis;
@@ -114,17 +113,18 @@ void setup()
   #if debug || getciclosread || registrodefallos
     Serial.begin(115200);
     delay(500);
-    Serial.println(F("Iniciando..."));
+    Serial.println(F("Iniciando...\n"));
     delay(1000);
   #endif
   
   ebombaAr = 0;
   ebombaAb = 0;
   digitalWrite(llave, 0);
-  digitalWrite(vRele[0],0); // apagado
-  digitalWrite(vRele[1],1); // apagado // invertido
+  digitalWrite(vRele[0],!on[0]); // apagado
+  digitalWrite(vRele[1],!on[1]); // apagado // invertido;
   updateRelays();
-
+  pinMode(vRele[0],OUTPUT);
+  pinMode(vRele[1],OUTPUT);
   pinMode(vRele[0],OUTPUT);
   pinMode(vRele[1],OUTPUT);
   pinMode(llave,OUTPUT);
@@ -145,9 +145,9 @@ void setup()
     for(byte i = 0; i<2;i++)
     {
       EEPROM.put(addr,0);
-      addr+=sizeof(bool);
+      addr+=sizeof(int);
       EEPROM.put(addr,0);
-      addr+=sizeof(unsigned int);
+      addr+=sizeof(int);
     }
 
   #endif
@@ -156,53 +156,24 @@ void setup()
   #if getciclosread
   Serial.println(F("Reading ciclos"));
     addr = 0;
-    bool ok;
     for(byte i = 0; i<2;i++)
     {
-      EEPROM.get(addr,ok);
-      Serial.println(ok);
-      addr+=sizeof(bool);
       EEPROM.get(addr,data);
       Serial.println(data);
-      addr+=sizeof(unsigned int);
+      addr+=sizeof(int);
+      EEPROM.get(addr,data);
+      Serial.println(data);
+      addr+=sizeof(int);
     }
   #endif
 
-#if registrodefallos
-  Serial.print(F("Superado el numero maximo de ciclos de cupe: "));
-  Serial.println(EEPROM.get(maxciclosabaddr,data));
-  Serial.print(F("Superado el numero maximo de ciclos de cubo arriba: "));
-  Serial.println(EEPROM.get(maxciclosaraddr,data));
-  Serial.print(F("No succiona agua la bomba de arriba: "));
-  Serial.println(EEPROM.get(bombaarnosubeaguaaddr,data));
-  Serial.print(F("Se ha activado la boya de seguridad: "));
-  Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
-  Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
-  Serial.println(EEPROM.get(numeroderiegosaddr,data));
-  Serial.println(F("\nPuedes resetear el registro enviando reset\n"));
-  if(EEPROM.get(numeroderiegosaddr,ciclosri) == 0)
-  {
-    ciclosrisw = 1;
-  }
-
-  #if !reintentarbombas
-  if (EEPROM.get(maxciclosabaddr,data))
-  {
-    Serial.print(F("Superado el numero maximo de ciclos de cupe en un reinicio anterior, abortando inicio"));
-    error = 1;
-  }
-  if (EEPROM.get(maxciclosaraddr,data))
-  {
-    Serial.print(F("Superado el numero maximo de ciclos de cubo arriba en un reinicio anterior, abortando inicio"));
-    error = 1;
-  }
-  if (EEPROM.get(maxciclosaraddr,data))
-  {
-    Serial.print(F("No succiona agua la bomba de arriba en un reinico anterior, abortando inicio"));
-    error = 1;
-  }
-  #endif
-#endif
+  digitalWrite(vRele[0], !on[0]);
+  digitalWrite(vRele[1], !on[1]);
+  //while(1);
+  //float aux[2] = {0,13};
+  //waitForVolt(aux);
+  //digitalWrite(vRele[0], !on[0]);
+  //digitalWrite(vRele[1], !on[1]);
 
 #if abriralarrancar
   #if debug
@@ -213,6 +184,44 @@ void setup()
     vital();
 #endif
   regar(0);
+
+  #if registrodefallos
+  Serial.print(F("Superado el numero maximo de ciclos de cupe: "));
+  Serial.println(EEPROM.get(maxciclosabaddr,data));
+  Serial.print(F("Superado el numero maximo de ciclos de cubo arriba: "));
+  Serial.println(EEPROM.get(maxciclosaraddr,data));
+  Serial.print(F("No succiona agua la bomba de arriba: "));
+  Serial.println(EEPROM.get(bombaarnosubeaguaaddr,data));
+  Serial.print(F("Se ha activado la boya de seguridad: "));
+  Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
+  Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
+  Serial.println(EEPROM.get(numeroderiegosaddr,data));
+  
+  if(EEPROM.get(numeroderiegosaddr,ciclosri) == 0)
+  {
+    ciclosrisw = 1;
+  }
+
+  #if !reintentarbombas
+  Serial.println();
+  if (EEPROM.get(maxciclosabaddr,data))
+  {
+    Serial.println(F("ERROR: Superado el numero maximo de ciclos de cupe en un reinicio anterior, abortando inicio"));
+    error = 1;
+  }
+  if (EEPROM.get(maxciclosaraddr,data))
+  {
+    Serial.println(F("ERROR: Superado el numero maximo de ciclos de cubo arriba en un reinicio anterior, abortando inicio"));
+    error = 1;
+  }
+  if (EEPROM.get(bombaarnosubeaguaaddr,data))
+  {
+    Serial.println(F("ERROR: No succiona agua la bomba de arriba en un reinico anterior, abortando inicio"));
+    error = 1;
+  }  
+  #endif
+  Serial.println(F("\nPuedes resetear el registro enviando reset o apagar el sistema enviando off\n"));
+#endif
 
   #if debug || getciclosread || registrodefallos
     Serial.println(F("Todo listo!!!"));
@@ -268,8 +277,8 @@ void loop()
         bool aux;
         if (!EEPROM.get(0,aux))
         {
-          EEPROM.put(0,true);
-          EEPROM.put(0+sizeof(bool),ciclosab);
+          EEPROM.put(0,1);
+          EEPROM.put(0+sizeof(int),ciclosab);
         }
       #endif
       ciclosab = 0;
@@ -323,10 +332,10 @@ void loop()
       {
         error = 1;
         #if registrodefallos
-          bool aux;
-          if(EEPROM.get(maxciclosabaddr,aux) == 0)
+          int aux;
+          if(EEPROM.get(bombaarnosubeaguaaddr,aux) == 0)
           {
-            EEPROM.put(maxciclosabaddr,1);
+            EEPROM.put(bombaarnosubeaguaaddr,1);
           }
         #endif
         #if debug
@@ -347,8 +356,8 @@ void loop()
         bool aux;
         if (!EEPROM.get(sizeof(bool)+sizeof(int),aux))
         {
-          EEPROM.put(sizeof(bool)+sizeof(unsigned int),true);
-          EEPROM.put(sizeof(bool)+sizeof(unsigned int)+sizeof(bool),ciclosar);
+          EEPROM.put(sizeof(int)+sizeof(int),1);
+          EEPROM.put(sizeof(int)+sizeof(int)+sizeof(int),ciclosar);
         }
       #endif
       ciclosar = 0;
@@ -411,7 +420,7 @@ void serialEvent()
 {
   delay(750);
   String s = Serial.readStringUntil('\n');
-  if (s.equals("reset"))
+  if (s.equals(F("reset")))
   {
     Serial.println(F("Reseteando registros"));
     
@@ -432,6 +441,31 @@ void serialEvent()
     Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
     Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
     Serial.println(EEPROM.get(numeroderiegosaddr,data));
+
+    Serial.println(F("\nReinicia el sistema para completar el reset\n"));
+  }
+  else if (s.equals(F("off")))
+  {
+    Serial.println(F("Apagando sistema"));
+    EEPROM.put(maxciclosabaddr,-1);
+    EEPROM.put(maxciclosaraddr,-1);
+    EEPROM.put(bombaarnosubeaguaaddr,-1);
+    EEPROM.put(boyaseguridadactivadaaddr,-1);
+    EEPROM.put(numeroderiegosaddr,-1);
+
+    int data;
+    Serial.print(F("Superado el numero maximo de ciclos de cupe: "));
+    Serial.println(EEPROM.get(maxciclosabaddr,data));
+    Serial.print(F("Superado el numero maximo de ciclos de cubo arriba: "));
+    Serial.println(EEPROM.get(maxciclosaraddr,data));
+    Serial.print(F("No succiona agua la bomba de arriba: "));
+    Serial.println(EEPROM.get(bombaarnosubeaguaaddr,data));
+    Serial.print(F("Se ha activado la boya de seguridad: "));
+    Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
+    Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
+    Serial.println(EEPROM.get(numeroderiegosaddr,data));
+
+    Serial.println(F("\nReinicia el sistema para completar el apagado\n"));
   }
 }
 #endif
@@ -460,7 +494,7 @@ void checkMode()
   {
     mode = 0;
     #if registrodefallos
-      bool aux;
+      int aux;
       if(eboyaSeg == 0 && EEPROM.get(boyaseguridadactivadaaddr,aux) == 0)
       {
         EEPROM.put(boyaseguridadactivadaaddr,1);
@@ -544,18 +578,22 @@ void regar(bool x)
 
 void voltControl()
 {
+  //Serial.println("Llamado");
   if(vmillis+vcheckinterval<millis())
   {
+    vmillis = millis();
     readVolts();
     for (byte i = 0; i<2; i++)
     {
       if (volt[i] <= vload[i])
       {
         digitalWrite(vRele[i],on[i]); // carga
+        load[i] = 1;
       }
       if (volt[i] >= vmax[i])
       {
         digitalWrite(vRele[i],!on[i]); // no carga
+        load[i] = 0;
       }
     }
   }
@@ -576,10 +614,10 @@ void errorDetection()
       Serial.println(maxciclosar);
     #endif
     #if registrodefallos
-      bool aux;
-      if(EEPROM.get(bombaarnosubeaguaaddr,aux) == 0)
+      int aux;
+      if(EEPROM.get(maxciclosaraddr,aux) == 0)
       {
-        EEPROM.put(bombaarnosubeaguaaddr,1);
+        EEPROM.put(maxciclosaraddr,1);
       }
     #endif
     error = 1;
@@ -591,7 +629,7 @@ void errorDetection()
       Serial.println(maxciclosab);
     #endif
     #if registrodefallos
-      bool aux;
+      int aux;
       if(EEPROM.get(maxciclosabaddr,aux) == 0)
       {
         EEPROM.put(maxciclosabaddr,1);
@@ -617,8 +655,53 @@ void errorDetection()
   }
 }
 
-void waitForVolt(float getVolt[2])
+void waitForVolt(float getVolt[2], float threshold)
 {
+  digitalWrite(vRele[0], on[0]);
+  digitalWrite(vRele[1], on[1]);    
+  readVolts();
+  while(volt[0] < getVolt[0]-threshold || volt[1] < getVolt[1]-threshold)
+  {
+    readVolts();
+    #if debug
+      Serial.print(F("Getting "));
+      Serial.print(getVolt[0]);
+      Serial.println(F("V..."));
+      Serial.print(F("Current voltage of zone "));
+      Serial.print(0);
+      Serial.print(": ");
+      Serial.print(volt[0]);
+      Serial.print(F("V\tListo: "));
+      Serial.println(volt[0] >= getVolt[0]-threshold);
+      Serial.println();
+      Serial.print(F("Getting "));
+      Serial.print(getVolt[1]);
+      Serial.println(F("V..."));
+      Serial.print(F("Current voltage of zone "));
+      Serial.print(1);
+      Serial.print(": ");
+      Serial.print(volt[1]);
+      Serial.print(F("V\tListo: "));
+      Serial.println(volt[1] >= getVolt[1]-threshold);
+      Serial.println();
+      delay(500);
+    #endif
+    for(byte i = 0; i<2;i++)
+    {    
+      if (volt[i] > getVolt[i])
+      {
+        digitalWrite(vRele[i], !on[i]);
+        load[i] = 0;
+      }
+      else if (volt[i] <= getVolt[i]-threshold)
+      {
+        digitalWrite(vRele[i], on[i]);
+        load[i] = 1;
+      }
+    }
+  }
+} //*/
+/*{
   digitalWrite(vRele[0], !on[0]);
   digitalWrite(vRele[1], !on[1]);
   for (int i=0;i<2;i++)
@@ -651,6 +734,11 @@ void waitForVolt(float getVolt[2])
       Serial.println(i);
     #endif
   }
+}//*/
+
+void waitForVolt(float getVolt[2])
+{
+  waitForVolt(getVolt, 0.5);
 }
 
 void readVolts()
@@ -723,7 +811,8 @@ void printData()
     Serial.print(i);
     Serial.print(": ");
     Serial.print(volt[i]);
-    Serial.println(" V");
+    Serial.print(" V\tCargando: ");
+    Serial.println(load[i]);
   }
   Serial.println();
   
