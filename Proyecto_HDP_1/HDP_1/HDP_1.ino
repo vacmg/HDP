@@ -38,6 +38,8 @@
   const unsigned int numeroderiegosaddr = 60;
 #endif
 
+const unsigned int forzarAperturaAddr = 100;
+
 unsigned const int vRele[2] = {7,12}; // pines de ls reles de voltaje
 const float vmax[2] = {15.7, 13.4}; // voltaje maximo que alcanzan los condensadores // en V 
 const float vload[2] = {14.5, 12.9}; // voltaje de histeresis de los condensadores (a este voltaje comienzan a cargarse los condensadores) (a este voltaje el sistema pasa a modo 1 (ON)) // en V
@@ -83,6 +85,7 @@ unsigned int ciclosar = 0;
 unsigned int ciclosab = 0;
 unsigned int ciclosri = 0;
 bool ciclosrisw = 0;
+bool forzarApertura = 0;
 
 float volt[2];
 
@@ -196,11 +199,15 @@ void setup()
   Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
   Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
   Serial.println(EEPROM.get(numeroderiegosaddr,data));
+  Serial.print(F("Forzado de apertura de la llave: "));
+  Serial.println(EEPROM.get(forzarAperturaAddr,data));
   
   if(EEPROM.get(numeroderiegosaddr,ciclosri) == 0)
   {
     ciclosrisw = 1;
   }
+
+  EEPROM.get(forzarAperturaAddr,forzarApertura);kjcxinfdibfkbfdhvbf
 
   #if !reintentarbombas
   Serial.println();
@@ -429,6 +436,7 @@ void serialEvent()
     EEPROM.put(bombaarnosubeaguaaddr,0);
     EEPROM.put(boyaseguridadactivadaaddr,0);
     EEPROM.put(numeroderiegosaddr,0);
+    EEPROM.put(forzarAperturaAddr,0);
     
     int data;
     Serial.print(F("Superado el numero maximo de ciclos de cupe: "));
@@ -441,6 +449,8 @@ void serialEvent()
     Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
     Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
     Serial.println(EEPROM.get(numeroderiegosaddr,data));
+    Serial.print(F("Forzado de apertura de la llave: "));
+    Serial.println(EEPROM.get(forzarAperturaAddr,data));
 
     Serial.println(F("\nReinicia el sistema para completar el reset\n"));
   }
@@ -464,8 +474,14 @@ void serialEvent()
     Serial.println(EEPROM.get(boyaseguridadactivadaaddr,data));
     Serial.print(F("Numero de riegos diarios del dia del anterior reset: "));
     Serial.println(EEPROM.get(numeroderiegosaddr,data));
+    Serial.print(F("Forzado de apertura de la llave: "));
+    Serial.println(EEPROM.get(forzarAperturaAddr,data));
 
     Serial.println(F("\nReinicia el sistema para completar el apagado\n"));
+  }
+  else if(s.equals(F("abrir")))
+  {
+    EEPROM.put(forzarAperturaAddr,1);
   }
 }
 #endif
