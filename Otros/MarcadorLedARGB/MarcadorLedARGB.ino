@@ -1,12 +1,9 @@
 #include <FastLED.h>
 
-#define NUM_LEDS 63
-#define DATA_PIN 6
-
 class Digit
 {
   public:
-    enum segments {top = 1, topLeft = 2, topRight = 3, center = 4, bottom = 5, bottomLeft = 6, bottomRight = 7};
+    enum segments {top = 0, topLeft, topRight, center, bottom, bottomLeft, bottomRight};
 
     Digit(int ledsPerSegment, int firstLedPos, struct CRGB *ledsDataArray)
     {
@@ -395,31 +392,86 @@ class Digit
     int segmentPosOffset[7];
 };
 
+
+#define NUM_LEDS 252
+#define DATA_PIN 6
+
+//2 equipos, azul izquierda, rojo derecha, boton subir y bajar para cada equipo, boton reset
+
 struct CRGB leds[NUM_LEDS];
-Digit digit = Digit(9,0,leds);
+Digit lBlue(9,0,leds);
+Digit rBlue(9,63,leds);
+Digit lRed(9,126,leds);
+Digit rRed(9,189,leds);
+
+const byte redUp = 2;
+const byte redDown = 2;
+const byte blueUp = 2;
+const byte blueDown = 2;
+const byte reset = 2;
+
+byte red = 0;
+byte blue = 0;
+
+void updateSign()
+{
+  lBlue.setDigit((blue/10)%10,0,0,255,0);
+  rBlue.setDigit(blue%10,0,0,255,0);
+  lRed.setDigit((red/10)%10,255,0,0,0);
+  rRed.setDigit(red%10,255,0,0,0);
+  FastLED.show();
+}
 
 void setup()
 {
   FastLED.addLeds<NEOPIXEL,DATA_PIN>(leds, NUM_LEDS);
-  fill_solid(leds, NUM_LEDS,CRGB::Black);
+  fill_solid(leds, NUM_LEDS,CRGB::White);
+  delay(1000);
+  pinMode(redUp,INPUT);
+  pinMode(redDown,INPUT);
+  pinMode(blueUp,INPUT);
+  pinMode(blueDown,INPUT);
+  pinMode(reset,INPUT);
   
-  digit.setSegment(Digit::top,255,0,0);
-  digit.setSegment(Digit::bottom,0,0,255);
-  digit.setSegment(Digit::topLeft,0,255,0);
-  digit.setSegment(Digit::bottomLeft,0,255,0);
-  delay(3000);
+  lBlue.setDigit('H',0,255,30);
+  rBlue.setDigit('D',0,255,30);
+  lRed.setDigit('P',0,255,30);
+  rRed.setDigit(' ',0,255,30);
+  delay(5000);
+  fill_solid(leds, NUM_LEDS,CRGB::Black);
 }
 
 void loop()
 {
-  for (char i = 0;i<=9;i++)
+  if(digitalRead(redUp))
   {
-    digit.setDigit(i,255,30,5);
-    delay(1000);
+    red = red==255?255:red+1;
+    updateSign();
+    delay(100);
   }
-  for (char i = 'a';i<='z';i++)
+  else if(digitalRead(redDown))
   {
-    digit.setDigit(i,5,255,50);
-    delay(1000);
+    red = red==0?0:red-1;
+    updateSign();
+    delay(100);
+  }
+  else if(digitalRead(blueUp))
+  {
+    blue = blue==255?255:blue+1;
+    updateSign();
+    delay(100);
+  }
+  else if(digitalRead(blueDown))
+  {
+    blue = blue==0?0:blue-1;
+    updateSign();
+    delay(100);
+  }
+  else if(digitalRead(reset))
+  {
+    red = 0;
+    blue = 0;
+    updateSign();
+    delay(100);
   }
 }
