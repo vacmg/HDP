@@ -427,11 +427,11 @@ void setup()
   FastLED.addLeds<NEOPIXEL,DATA_PIN>(leds, NUM_LEDS);
   fill_solid(leds, NUM_LEDS,CRGB::White);
   delay(1000);
-  pinMode(redUp,INPUT);
-  pinMode(redDown,INPUT);
-  pinMode(blueUp,INPUT);
-  pinMode(blueDown,INPUT);
-  pinMode(reset,INPUT);
+  pinMode(redUp,INPUT_PULLUP);
+  pinMode(redDown,INPUT_PULLUP);
+  pinMode(blueUp,INPUT_PULLUP);
+  pinMode(blueDown,INPUT_PULLUP);
+  pinMode(reset,INPUT_PULLUP);
   
   lBlue.setDigit('H',0,255,30);
   rBlue.setDigit('D',0,255,30);
@@ -443,31 +443,31 @@ void setup()
 
 void loop()
 {
-  if(digitalRead(redUp))
+  if(!digitalRead(redUp))
   {
     red = red==255?255:red+1;
     updateSign();
     delay(100);
   }
-  else if(digitalRead(redDown))
+  else if(!digitalRead(redDown))
   {
     red = red==0?0:red-1;
     updateSign();
     delay(100);
   }
-  else if(digitalRead(blueUp))
+  else if(!digitalRead(blueUp))
   {
     blue = blue==255?255:blue+1;
     updateSign();
     delay(100);
   }
-  else if(digitalRead(blueDown))
+  else if(!digitalRead(blueDown))
   {
     blue = blue==0?0:blue-1;
     updateSign();
     delay(100);
   }
-  else if(digitalRead(reset))
+  else if(!digitalRead(reset))
   {
     red = 0;
     blue = 0;
