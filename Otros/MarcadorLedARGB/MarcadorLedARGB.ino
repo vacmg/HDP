@@ -1,5 +1,14 @@
 #include <FastLED.h>
 
+#define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
+#define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
+// Pines de entrada de los botones
+const byte redUp = 8;
+const byte redDown = 9;
+const byte blueUp = 10;
+const byte blueDown = 11;
+const byte reset = 12;
+
 class Digit
 {
   public:
@@ -10,7 +19,7 @@ class Digit
       this->ledsPerSegment = ledsPerSegment;
       this->firstLedPos = firstLedPos;
       this->ledsDataArray = ledsDataArray;
-      enum segments segmentOrderList[7] = {bottomRight, bottom, bottomLeft, topLeft, top, topRight, center};
+      enum segments segmentOrderList[7] = {topLeft, top, topRight, bottomRight, bottom, bottomLeft, center};
       for(int i = 0; i<7;i++)
       {
           segmentPosOffset[segmentOrderList[i]] = i;
@@ -404,12 +413,6 @@ Digit rBlue(9,63,leds);
 Digit lRed(9,126,leds);
 Digit rRed(9,189,leds);
 
-const byte redUp = 2;
-const byte redDown = 2;
-const byte blueUp = 2;
-const byte blueDown = 2;
-const byte reset = 2;
-
 byte red = 0;
 byte blue = 0;
 
@@ -426,7 +429,14 @@ void setup()
 {
   FastLED.addLeds<NEOPIXEL,DATA_PIN>(leds, NUM_LEDS);
   fill_solid(leds, NUM_LEDS,CRGB::White);
+  FastLED.show();
+  while(WHITE)
+  {
+    FastLED.show();
+  }
+  Serial.begin(115200);
   delay(1000);
+  Serial.println(F("STARTING"));
   pinMode(redUp,INPUT_PULLUP);
   pinMode(redDown,INPUT_PULLUP);
   pinMode(blueUp,INPUT_PULLUP);
@@ -437,41 +447,49 @@ void setup()
   rBlue.setDigit('D',0,255,30);
   lRed.setDigit('P',0,255,30);
   rRed.setDigit(' ',0,255,30);
+  FastLED.show();
   delay(5000);
-  fill_solid(leds, NUM_LEDS,CRGB::Black);
+  Serial.println(F("READY"));
+  updateSign();
 }
 
 void loop()
 {
   if(!digitalRead(redUp))
   {
-    red = red==255?255:red+1;
+    Serial.println(F("RED UP"));
+    red = red==99?99:red+1;
     updateSign();
-    delay(100);
+    delay(DELAY);
   }
   else if(!digitalRead(redDown))
   {
+    Serial.println(F("RED DOWN"));
     red = red==0?0:red-1;
     updateSign();
-    delay(100);
+    delay(DELAY);
   }
   else if(!digitalRead(blueUp))
   {
-    blue = blue==255?255:blue+1;
+    Serial.println(F("BLUE UP"));
+    blue = blue==99?99:blue+1;
     updateSign();
-    delay(100);
+    delay(DELAY);
   }
   else if(!digitalRead(blueDown))
   {
+    Serial.println(F("BLUE DOWN"));
     blue = blue==0?0:blue-1;
     updateSign();
-    delay(100);
+    delay(DELAY);
   }
   else if(!digitalRead(reset))
   {
+    Serial.println(F("RESET"));
     red = 0;
     blue = 0;
     updateSign();
-    delay(100);
+    delay(DELAY);
   }
+  //FastLED.show();
 }
