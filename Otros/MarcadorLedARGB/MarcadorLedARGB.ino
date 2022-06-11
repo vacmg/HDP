@@ -404,6 +404,8 @@ class Digit
 
 #define NUM_LEDS 252
 #define DATA_PIN 6
+#define MAX_NUM 99
+#define MIN_NUM 0
 
 //2 equipos, azul izquierda, rojo derecha, boton subir y bajar para cada equipo, boton reset
 
@@ -413,8 +415,8 @@ Digit rBlue(9,63,leds);
 Digit lRed(9,126,leds);
 Digit rRed(9,189,leds);
 
-byte red = 0;
-byte blue = 0;
+byte red = MIN_NUM;
+byte blue = MIN_NUM;
 
 void updateSign()
 {
@@ -458,36 +460,36 @@ void loop()
   if(!digitalRead(redUp))
   {
     Serial.println(F("RED UP"));
-    red = red==99?99:red+1;
+    red = red==MAX_NUM?MAX_NUM:red+1;
     updateSign();
     delay(DELAY);
   }
   else if(!digitalRead(redDown))
   {
     Serial.println(F("RED DOWN"));
-    red = red==0?0:red-1;
+    red = red==MIN_NUM?MIN_NUM:red-1;
     updateSign();
     delay(DELAY);
   }
   else if(!digitalRead(blueUp))
   {
     Serial.println(F("BLUE UP"));
-    blue = blue==99?99:blue+1;
+    blue = blue==MAX_NUM?MAX_NUM:blue+1;
     updateSign();
     delay(DELAY);
   }
   else if(!digitalRead(blueDown))
   {
     Serial.println(F("BLUE DOWN"));
-    blue = blue==0?0:blue-1;
+    blue = blue==MIN_NUM?MIN_NUM:blue-1;
     updateSign();
     delay(DELAY);
   }
   else if(!digitalRead(reset))
   {
     Serial.println(F("RESET"));
-    red = 0;
-    blue = 0;
+    red = MIN_NUM;
+    blue = MIN_NUM;
     updateSign();
     delay(DELAY);
   }
