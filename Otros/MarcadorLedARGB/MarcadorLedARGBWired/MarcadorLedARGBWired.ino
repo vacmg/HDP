@@ -2,6 +2,12 @@
 
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
+
+#define NUM_LEDS 252
+#define DATA_PIN 6
+#define MAX_NUM 99
+#define MIN_NUM 0
+
 // Pines de entrada de los botones
 const byte redUp = 8;
 const byte redDown = 9;
@@ -400,12 +406,6 @@ class Digit
     int ledsPerSegment, firstLedPos;
     int segmentPosOffset[7];
 };
-
-
-#define NUM_LEDS 252
-#define DATA_PIN 6
-#define MAX_NUM 99
-#define MIN_NUM 0
 
 //2 equipos, azul izquierda, rojo derecha, boton subir y bajar para cada equipo, boton reset
 
