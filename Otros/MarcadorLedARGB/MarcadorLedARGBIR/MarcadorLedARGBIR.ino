@@ -9,11 +9,11 @@
 
 #define DECODE_NEC 1 // Includes Apple and Onkyo
 
-#define RED_UP_CMD 0x10
-#define RED_DOWN_CMD 0x11
-#define BLUE_UP_CMD 0x12
-#define BLUE_DOWN_CMD 0x13
-#define RESET_CMD 0x14
+#define RED_UP_CMD 0x5E
+#define RED_DOWN_CMD 0x4A
+#define BLUE_UP_CMD 0xC
+#define BLUE_DOWN_CMD 0x42
+#define RESET_CMD 0x1C
 
 // Pines de entrada de los botones
 const byte redUp = 8;
