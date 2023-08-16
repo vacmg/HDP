@@ -1,3 +1,4 @@
+#define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
 
@@ -7,7 +8,7 @@
 #define MAX_NUM 99
 #define MIN_NUM 0
 
-#define DECODE_NEC 1 // Includes Apple and Onkyo
+#define DECODE_NEC // Includes Apple and Onkyo
 
 #define RED_UP_CMD 0x5E
 #define RED_DOWN_CMD 0x4A
@@ -430,10 +431,26 @@ byte blue = MIN_NUM;
 
 void updateSign()
 {
-  lBlue.setDigit((blue/10)%10,0,0,255,0);
+  byte num = (blue/10)%10;
+  #if !ALWAYS_USE_2_DIGITS
+    if(num == 0)
+    {
+      num = ' ';
+    }
+  #endif
+  lBlue.setDigit(num,0,0,255,0);
   rBlue.setDigit(blue%10,0,0,255,0);
-  lRed.setDigit((red/10)%10,255,0,0,0);
+
+  num = (red/10)%10;
+  #if !ALWAYS_USE_2_DIGITS
+    if(num == 0)
+    {
+      num = ' ';
+    }
+  #endif
+  lRed.setDigit(num,255,0,0,0);
   rRed.setDigit(red%10,255,0,0,0);
+
   FastLED.show();
 }
 
