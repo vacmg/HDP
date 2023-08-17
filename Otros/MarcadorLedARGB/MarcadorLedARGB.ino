@@ -529,7 +529,6 @@ void loop()
       {
         action = RESET_ACTION;
       }
-      IrReceiver.resume(); // Enable receiving of the next value
     }
   #elif MODE_OF_INTERACTION == MODE_WIRED
     if(!digitalRead(redUp))
@@ -586,5 +585,8 @@ void loop()
     updateSign();
     delay(DELAY);
     action = NO_ACTION;
+	#if MODE_OF_INTERACTION == MODE_IR
+	  IrReceiver.resume(); // Enable receiving of the next value
+	#endif
   }
 }
