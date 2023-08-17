@@ -1,19 +1,39 @@
-#include <FastLED.h>
+#define MODE_WIRED 0
+#define MODE_IR 1
 
+#define MODE_OF_INTERACTION MODE_WIRED // Aqui se selecciona el modo de interaccion
+#define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
 
 #define NUM_LEDS 252
-#define DATA_PIN 6
+#define LEDS_DATA_PIN 6
 #define MAX_NUM 99
 #define MIN_NUM 0
 
-// Pines de entrada de los botones
-const byte redUp = 8;
-const byte redDown = 9;
-const byte blueUp = 10;
-const byte blueDown = 11;
-const byte reset = 12;
+#if MODE_OF_INTERACTION == MODE_IR
+  #define IR_RECEIVE_PIN 2 // To be compatible with interrupt example, pin 2 is chosen here.
+  #define DECODE_NEC // Includes Apple and Onkyo
+
+  #define RED_UP_IR_CMD 0x5E
+  #define RED_DOWN_IR_CMD 0x4A
+  #define BLUE_UP_IR_CMD 0xC
+  #define BLUE_DOWN_IR_CMD 0x42
+  #define RESET_IR_CMD 0x1C
+
+  #include <IRremote.hpp>
+#elif MODE_OF_INTERACTION == MODE_WIRED
+  // Pines de entrada de los botones
+  const byte redUp = 8;
+  const byte redDown = 9;
+  const byte blueUp = 10;
+  const byte blueDown = 11;
+  const byte reset = 12;
+#endif
+
+typedef enum ActionEnum {NO_ACTION = 0, RED_UP_ACTION, RED_DOWN_ACTION, BLUE_UP_ACTION, BLUE_DOWN_ACTION, RESET_ACTION} Action;
+
+#include <FastLED.h>
 
 class Digit
 {
@@ -407,8 +427,7 @@ class Digit
     int segmentPosOffset[7];
 };
 
-//2 equipos, azul izquierda, rojo derecha, boton subir y bajar para cada equipo, boton reset
-
+Action action = NO_ACTION;
 struct CRGB leds[NUM_LEDS];
 Digit lBlue(9,0,leds);
 Digit rBlue(9,63,leds);
@@ -420,78 +439,144 @@ byte blue = MIN_NUM;
 
 void updateSign()
 {
-  lBlue.setDigit((blue/10)%10,0,0,255,0);
+  byte num = (blue/10)%10;
+  #if !ALWAYS_USE_2_DIGITS
+    if(num == 0)
+    {
+      num = ' ';
+    }
+  #endif
+  lBlue.setDigit(num,0,0,255,0);
   rBlue.setDigit(blue%10,0,0,255,0);
-  lRed.setDigit((red/10)%10,255,0,0,0);
+
+  num = (red/10)%10;
+  #if !ALWAYS_USE_2_DIGITS
+    if(num == 0)
+    {
+      num = ' ';
+    }
+  #endif
+  lRed.setDigit(num,255,0,0,0);
   rRed.setDigit(red%10,255,0,0,0);
+
   FastLED.show();
 }
 
 void setup()
 {
-  FastLED.addLeds<NEOPIXEL,DATA_PIN>(leds, NUM_LEDS);
+  FastLED.addLeds<NEOPIXEL,LEDS_DATA_PIN>(leds, NUM_LEDS);
   fill_solid(leds, NUM_LEDS,CRGB::White);
   FastLED.show();
-  while(WHITE)
-  {
-    FastLED.show();
-  }
+  #if WHITE
+    while (true);
+  #endif
+
   Serial.begin(115200);
   delay(1000);
   Serial.println(F("STARTING"));
-  pinMode(redUp,INPUT_PULLUP);
-  pinMode(redDown,INPUT_PULLUP);
-  pinMode(blueUp,INPUT_PULLUP);
-  pinMode(blueDown,INPUT_PULLUP);
-  pinMode(reset,INPUT_PULLUP);
   
   lBlue.setDigit('H',0,255,30);
   rBlue.setDigit('D',0,255,30);
   lRed.setDigit('P',0,255,30);
   rRed.setDigit(' ',0,255,30);
   FastLED.show();
+
+  #if MODE_OF_INTERACTION == MODE_WIRED
+    pinMode(redUp,INPUT_PULLUP);
+    pinMode(redDown,INPUT_PULLUP);
+    pinMode(blueUp,INPUT_PULLUP);
+    pinMode(blueDown,INPUT_PULLUP);
+    pinMode(reset,INPUT_PULLUP);
+  #elif MODE_OF_INTERACTION == MODE_IR
+    IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
+  #endif
+
   delay(5000);
-  Serial.println(F("READY"));
   updateSign();
+  Serial.println(F("READY"));
 }
 
 void loop()
 {
-  if(!digitalRead(redUp))
+  #if MODE_OF_INTERACTION == MODE_IR
+    if (IrReceiver.decode())
+    {
+      if(IrReceiver.decodedIRData.command == RED_UP_IR_CMD)
+      {
+        action = RED_UP_ACTION;
+      }
+      else if(IrReceiver.decodedIRData.command == RED_DOWN_IR_CMD)
+      {
+        action = RED_DOWN_ACTION;
+      }
+      else if(IrReceiver.decodedIRData.command == BLUE_UP_IR_CMD)
+      {
+        action = BLUE_UP_ACTION;
+      }
+      else if(IrReceiver.decodedIRData.command == BLUE_DOWN_IR_CMD)
+      {
+        action = BLUE_DOWN_ACTION;
+      }
+      else if(IrReceiver.decodedIRData.command == RESET_IR_CMD)
+      {
+        action = RESET_ACTION;
+      }
+      IrReceiver.resume(); // Enable receiving of the next value
+    }
+  #elif MODE_OF_INTERACTION == MODE_WIRED
+    if(!digitalRead(redUp))
+    {
+      action = RED_UP_ACTION;
+    }
+    else if(!digitalRead(redDown))
+    {
+      action = RED_DOWN_ACTION;
+    }
+    else if(!digitalRead(blueUp))
+    {
+      action = BLUE_UP_ACTION;
+    }
+    else if(!digitalRead(blueDown))
+    {
+      action = BLUE_DOWN_ACTION;
+    }
+    else if(!digitalRead(reset))
+    {
+      action = RESET_ACTION;
+    }
+  #endif
+
+  if(action != NO_ACTION)
   {
-    Serial.println(F("RED UP"));
-    red = red==MAX_NUM?MAX_NUM:red+1;
+    switch(action)
+    {
+      case RED_UP_ACTION:
+        Serial.println(F("RED UP"));
+        red = red==MAX_NUM?MAX_NUM:red+1;
+        break;
+
+      case RED_DOWN_ACTION:
+        Serial.println(F("RED DOWN"));
+        red = red==MIN_NUM?MIN_NUM:red-1;
+        break;
+
+      case BLUE_UP_ACTION:
+        Serial.println(F("BLUE UP"));
+        blue = blue==MAX_NUM?MAX_NUM:blue+1;
+        break;
+
+      case BLUE_DOWN_ACTION:
+        Serial.println(F("BLUE DOWN"));
+        blue = blue==MIN_NUM?MIN_NUM:blue-1;
+        break;
+
+      case RESET_ACTION:
+        Serial.println(F("RESET"));
+        red = MIN_NUM;
+        blue = MIN_NUM;
+    }
     updateSign();
     delay(DELAY);
+    action = NO_ACTION;
   }
-  else if(!digitalRead(redDown))
-  {
-    Serial.println(F("RED DOWN"));
-    red = red==MIN_NUM?MIN_NUM:red-1;
-    updateSign();
-    delay(DELAY);
-  }
-  else if(!digitalRead(blueUp))
-  {
-    Serial.println(F("BLUE UP"));
-    blue = blue==MAX_NUM?MAX_NUM:blue+1;
-    updateSign();
-    delay(DELAY);
-  }
-  else if(!digitalRead(blueDown))
-  {
-    Serial.println(F("BLUE DOWN"));
-    blue = blue==MIN_NUM?MIN_NUM:blue-1;
-    updateSign();
-    delay(DELAY);
-  }
-  else if(!digitalRead(reset))
-  {
-    Serial.println(F("RESET"));
-    red = MIN_NUM;
-    blue = MIN_NUM;
-    updateSign();
-    delay(DELAY);
-  }
-  //FastLED.show();
 }
