@@ -1,13 +1,21 @@
+/**
+ * Codigo fuente de un marcador de pelota vasca hecho a partir de una tira led aRGB y que puede utilizar uno de los siguientes modos de funcionamiento:
+ * Por cable y botones; Por un mando infrarrojos.
+**/
+
 #define MODE_WIRED 0
 #define MODE_IR 1
 
+//////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
 #define MODE_OF_INTERACTION MODE_WIRED // Aqui se selecciona el modo de interaccion
 #define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
+//////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
 
-#define NUM_LEDS 252
+//////////////////////////////////////////     I/O     /////////////////////////////////////////////////////
 #define LEDS_DATA_PIN 6
+#define NUM_LEDS 252
 #define MAX_NUM 99
 #define MIN_NUM 0
 
@@ -23,13 +31,13 @@
 
   #include <IRremote.hpp>
 #elif MODE_OF_INTERACTION == MODE_WIRED
-  // Pines de entrada de los botones
   const byte redUp = 8;
   const byte redDown = 9;
   const byte blueUp = 10;
   const byte blueDown = 11;
   const byte reset = 12;
 #endif
+//////////////////////////////////////////     I/O     /////////////////////////////////////////////////////
 
 typedef enum ActionEnum {NO_ACTION = 0, RED_UP_ACTION, RED_DOWN_ACTION, BLUE_UP_ACTION, BLUE_DOWN_ACTION, RESET_ACTION} Action;
 
