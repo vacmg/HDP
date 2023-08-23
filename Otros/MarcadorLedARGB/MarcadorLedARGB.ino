@@ -532,6 +532,10 @@ void loop()
       {
         action = RESET_ACTION;
       }
+      else
+      {
+        IrReceiver.resume(); // Discard other values
+      }
     }
   #elif MODE_OF_INTERACTION == MODE_WIRED
     if(!digitalRead(redUp))
