@@ -5,8 +5,11 @@
 
 #define MODE_WIRED 0
 #define MODE_IR 1
+#define CYCLIC_BEHAVIOUR 0
+#define LINEAL_BEHAVIOUR 1
 
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
+#define COUNTER_BEHAVIOUR CYCLIC_BEHAVIOUR // El modo del contador, ciclico: cuando llega al maximo, vuelve al minimo y viceversa; lineal: al llegar al maximo/minimo se queda en el
 #define MODE_OF_INTERACTION MODE_WIRED // Aqui se selecciona el modo de interaccion
 #define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
@@ -559,22 +562,38 @@ void loop()
     {
       case RED_UP_ACTION:
         Serial.println(F("RED UP"));
-        red = red==MAX_NUM?MAX_NUM:red+1;
+        #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
+          red = red==MAX_NUM?MIN_NUM:red+1;
+        #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
+          red = red==MAX_NUM?MAX_NUM:red+1;
+        #endif
         break;
 
       case RED_DOWN_ACTION:
         Serial.println(F("RED DOWN"));
-        red = red==MIN_NUM?MIN_NUM:red-1;
+        #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
+          red = red==MIN_NUM?MAX_NUM:red-1;
+        #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
+          red = red==MIN_NUM?MIN_NUM:red-1;
+        #endif
         break;
 
       case BLUE_UP_ACTION:
         Serial.println(F("BLUE UP"));
-        blue = blue==MAX_NUM?MAX_NUM:blue+1;
+        #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
+          blue = blue==MAX_NUM?MIN_NUM:blue+1;
+        #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
+          blue = blue==MAX_NUM?MAX_NUM:blue+1;
+        #endif
         break;
 
       case BLUE_DOWN_ACTION:
         Serial.println(F("BLUE DOWN"));
-        blue = blue==MIN_NUM?MIN_NUM:blue-1;
+        #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
+          blue = blue==MIN_NUM?MAX_NUM:blue-1;
+        #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
+          blue = blue==MIN_NUM?MIN_NUM:blue-1;
+        #endif
         break;
 
       case RESET_ACTION:
