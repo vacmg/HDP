@@ -5,12 +5,13 @@
 
 #define MODE_WIRED 0
 #define MODE_IR 1
+#define MODE_RF 2
 #define CYCLIC_BEHAVIOUR 0
 #define LINEAL_BEHAVIOUR 1
 
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
 #define COUNTER_BEHAVIOUR CYCLIC_BEHAVIOUR // El modo del contador, ciclico: cuando llega al maximo, vuelve al minimo y viceversa; lineal: al llegar al maximo/minimo se queda en el
-#define MODE_OF_INTERACTION MODE_WIRED // Aqui se selecciona el modo de interaccion
+#define MODE_OF_INTERACTION MODE_RF // Aqui se selecciona el modo de interaccion
 #define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
@@ -39,6 +40,17 @@
   const byte blueUp = 10;
   const byte blueDown = 11;
   const byte reset = 12;
+#elif MODE_OF_INTERACTION == MODE_RF
+  #define RF_RECEIVE_INTERRUPT 0 // This goes to pin 2
+  #define GDO0_PIN 9
+  #define GDO2_PIN 2
+
+  #define CMDs XX
+
+  #include <ELECHOUSE_CC1101_SRC_DRV.h>
+  #include <RCSwitch.h>
+
+  RCSwitch mySwitch = RCSwitch();
 #endif
 //////////////////////////////////////////     I/O     /////////////////////////////////////////////////////
 
@@ -500,6 +512,30 @@ void setup()
     pinMode(reset,INPUT_PULLUP);
   #elif MODE_OF_INTERACTION == MODE_IR
     IrReceiver.begin(IR_RECEIVE_PIN, ENABLE_LED_FEEDBACK);
+  #elif MODE_OF_INTERACTION == MODE_RF
+    if (ELECHOUSE_cc1101.getCC1101())
+    {
+      Serial.println("Connection OK");
+    }
+    else
+    {
+      Serial.println("Connection Error");
+      lBlue.setDigit('E',255,0,30);
+      rBlue.setDigit('R',255,0,30);
+      lRed.setDigit('R',255,0,30);
+      rRed.setDigit('C',255,255,255);
+      FastLED.show();
+    }
+
+    ELECHOUSE_cc1101.setGDO(GDO0_PIN, GDO2_PIN);
+    //CC1101 Settings:                (Settings with "//" are optional!)
+    ELECHOUSE_cc1101.Init();            // must be set to initialize the cc1101!
+  //ELECHOUSE_cc1101.setRxBW(812.50);  // Set the Receive Bandwidth in kHz. Value from 58.03 to 812.50. Default is 812.50 kHz.
+  //ELECHOUSE_cc1101.setPA(10);       // set TxPower. The following settings are possible depending on the frequency band.  (-30  -20  -15  -10  -6    0    5    7    10   11   12)   Default is max!
+    ELECHOUSE_cc1101.setMHZ(433.92); // Here you can set your basic frequency. The lib calculates the frequency automatically (default = 433.92).The cc1101 can: 300-348 MHZ, 387-464MHZ and 779-928MHZ. Read More info from datasheet.
+
+    mySwitch.enableReceive(RF_RECEIVE_INTERRUPT);  // Receiver on
+    ELECHOUSE_cc1101.SetRx();  // set Receive on
   #endif
 
   delay(5000);
@@ -557,6 +593,19 @@ void loop()
     else if(!digitalRead(reset))
     {
       action = RESET_ACTION;
+    }
+  #elif MODE_OF_INTERACTION == MODE_RF // TODO receive & interpret commands
+    if(mySwitch.available())
+    {
+      Serial.print("Received ");
+      Serial.print( mySwitch.getReceivedValue() & 0b11111111 ,DEC); // Get the data from the receiver
+      Serial.print(" / ");
+      Serial.print( mySwitch.getReceivedBitlength() );
+      Serial.print("bit ");
+      Serial.print("Protocol: ");
+      Serial.println( mySwitch.getReceivedProtocol() );
+
+      mySwitch.resetAvailable();
     }
   #endif
 
