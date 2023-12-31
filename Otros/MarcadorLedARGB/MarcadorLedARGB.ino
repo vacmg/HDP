@@ -3,19 +3,34 @@
  * Por cable y botones; Por un mando infrarrojos.
 **/
 
-#define MODE_WIRED 0
-#define MODE_IR 1
-#define MODE_RF 2
+#define MODE_SERIAL 0
+#define MODE_WIRED 1
+#define MODE_IR 2
+#define MODE_RF 3
 #define CYCLIC_BEHAVIOUR 0
 #define LINEAL_BEHAVIOUR 1
 
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
+#define USE_MODES true
 #define COUNTER_BEHAVIOUR CYCLIC_BEHAVIOUR // El modo del contador, ciclico: cuando llega al maximo, vuelve al minimo y viceversa; lineal: al llegar al maximo/minimo se queda en el
-#define MODE_OF_INTERACTION MODE_RF // Aqui se selecciona el modo de interaccion
+#define MODE_OF_INTERACTION MODE_SERIAL // Aqui se selecciona el modo de interaccion
 #define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
+#define DARK_MODE true // Si vale true, disminuye el brillo de los leds 
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
+
+//////////////////////////////////////////     CHECKS     //////////////////////////////////////////////////
+
+#if USE_MODES && (MODE_OF_INTERACTION != MODE_SERIAL || false )
+  #error Incompatible set of configurations USE_MODES == true && MODE_OF_INTERACTION != MODE_SERIAL
+#endif
+
+#if MODE_OF_INTERACTION == MODE_RF
+  #error MODE_RF NOT READY YET
+#endif
+
+//////////////////////////////////////////     CHECKS     //////////////////////////////////////////////////
 
 //////////////////////////////////////////     I/O     /////////////////////////////////////////////////////
 #define LEDS_DATA_PIN 6
@@ -54,8 +69,6 @@
 #endif
 //////////////////////////////////////////     I/O     /////////////////////////////////////////////////////
 
-typedef enum ActionEnum {NO_ACTION = 0, RED_UP_ACTION, RED_DOWN_ACTION, BLUE_UP_ACTION, BLUE_DOWN_ACTION, RESET_ACTION} Action;
-
 #include <FastLED.h>
 
 class Digit
@@ -91,9 +104,15 @@ class Digit
     int pos = (segmentPosOffset[segment]*ledsPerSegment)+firstLedPos;
     for (int i=0; i<ledsPerSegment;i++)
     {
-      ledsDataArray[pos].r = r;
-      ledsDataArray[pos].g = g;
-      ledsDataArray[pos].b = b;
+      #if DARK_MODE
+        ledsDataArray[pos].r = r==0?0:(r/10)+1;
+        ledsDataArray[pos].g = g==0?0:(g/10)+1;
+        ledsDataArray[pos].b = b==0?0:(b/10)+1;
+      #else
+        ledsDataArray[pos].r = r;
+        ledsDataArray[pos].g = g;
+        ledsDataArray[pos].b = b;
+      #endif
       pos++;
     }
     if (show)
@@ -104,6 +123,33 @@ class Digit
   {
     switch(digit)
     {
+      case ' ':
+      setSegment(top,0,0,0,0);
+      setSegment(topLeft,0,0,0,0);
+      setSegment(topRight,0,0,0,0);
+      setSegment(bottom,0,0,0,0);
+      setSegment(bottomLeft,0,0,0,0);
+      setSegment(bottomRight,0,0,0,0);
+      setSegment(center,0,0,0,0);
+      break;
+      case '-':
+      setSegment(top,0,0,0,0);
+      setSegment(topLeft,0,0,0,0);
+      setSegment(topRight,0,0,0,0);
+      setSegment(bottom,0,0,0,0);
+      setSegment(bottomLeft,0,0,0,0);
+      setSegment(bottomRight,0,0,0,0);
+      setSegment(center,r,g,b,0);
+      break;
+      case '_':
+      setSegment(top,0,0,0,0);
+      setSegment(topLeft,0,0,0,0);
+      setSegment(topRight,0,0,0,0);
+      setSegment(bottom,r,g,b,0);
+      setSegment(bottomLeft,0,0,0,0);
+      setSegment(bottomRight,0,0,0,0);
+      setSegment(center,0,0,0,0);
+      break;
       case 0: case '0':
       setSegment(top,r,g,b,0);
       setSegment(topLeft,r,g,b,0);
@@ -432,13 +478,13 @@ class Digit
       break;
 
       default:
-      setSegment(top,0,0,0,0);
+      setSegment(top,r,g,b,0);
       setSegment(topLeft,0,0,0,0);
-      setSegment(topRight,0,0,0,0);
+      setSegment(topRight,r,g,b,0);
       setSegment(bottom,0,0,0,0);
-      setSegment(bottomLeft,0,0,0,0);
+      setSegment(bottomLeft,r,g,b,0);
       setSegment(bottomRight,0,0,0,0);
-      setSegment(center,0,0,0,0);
+      setSegment(center,r,g,b,0);
     }
     if (show)
       FastLED.show();
@@ -450,7 +496,14 @@ class Digit
     int segmentPosOffset[7];
 };
 
+typedef enum {NO_ACTION = 0, MODE_CHANGE_ACTION, MATCH_RED_UP_ACTION, MATCH_RED_DOWN_ACTION, MATCH_BLUE_UP_ACTION, MATCH_BLUE_DOWN_ACTION, MATCH_RESET_ACTION, KEYBOARD_CLEAR_ACTION, KEYBOARD_VALIDATE_ACTION, KEYBOARD_NUM_ACTION, KEYBOARD_DELETE_NUM_ACTION } Action;
 Action action = NO_ACTION;
+
+#if USE_MODES
+typedef enum {MODE_OFF = 0, MODE_MATCH, MODE_KEYBOARD, MODE_NULL} Mode;
+Mode mode = MODE_OFF;
+#endif
+
 struct CRGB leds[NUM_LEDS];
 Digit lBlue(9,0,leds);
 Digit rBlue(9,63,leds);
@@ -459,8 +512,10 @@ Digit rRed(9,189,leds);
 
 byte red = MIN_NUM;
 byte blue = MIN_NUM;
+int keyboardNum = -1;
+byte keyboardDigit = 0;
 
-void updateSign()
+void updateSign(byte red, byte blue)
 {
   byte num = (blue/10)%10;
   #if !ALWAYS_USE_2_DIGITS
@@ -485,10 +540,143 @@ void updateSign()
   FastLED.show();
 }
 
+void updateSign(uint16_t num, byte r = 255, byte g = 255, byte b = 255)
+{
+  byte digit = num%10;
+  rRed.setDigit(digit+'0', r, g, b);
+  num/=10;
+  digit = num%10;
+  lRed.setDigit(digit==0?' ':digit+'0', r, g, b);
+  num/=10;
+  digit = num%10;
+  rBlue.setDigit(digit==0?' ':digit+'0', r, g, b);
+  num/=10;
+  digit = num%10;
+  lBlue.setDigit(digit==0?' ':digit+'0', r, g, b);
+}
+
+void updateSign(const char str[5], byte r = 255, byte g = 255, byte b = 255)
+{
+  lBlue.setDigit(str[0], r, g, b);
+  rBlue.setDigit(str[1], r, g, b);
+  lRed.setDigit(str[2], r, g, b);
+  rRed.setDigit(str[3], r, g, b);
+}
+
+void handleMatchAction()
+{
+  switch(action)
+  {
+    case MATCH_RED_UP_ACTION:
+      Serial.println(F("MATCH RED UP"));
+      #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
+        red = red==MAX_NUM?MIN_NUM:red+1;
+      #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
+        red = red==MAX_NUM?MAX_NUM:red+1;
+      #endif
+      break;
+
+    case MATCH_RED_DOWN_ACTION:
+      Serial.println(F("MATCH RED DOWN"));
+      #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
+        red = red==MIN_NUM?MAX_NUM:red-1;
+      #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
+        red = red==MIN_NUM?MIN_NUM:red-1;
+      #endif
+      break;
+
+    case MATCH_BLUE_UP_ACTION:
+      Serial.println(F("MATCH BLUE UP"));
+      #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
+        blue = blue==MAX_NUM?MIN_NUM:blue+1;
+      #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
+        blue = blue==MAX_NUM?MAX_NUM:blue+1;
+      #endif
+      break;
+
+    case MATCH_BLUE_DOWN_ACTION:
+      Serial.println(F("MATCH BLUE DOWN"));
+      #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
+        blue = blue==MIN_NUM?MAX_NUM:blue-1;
+      #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
+        blue = blue==MIN_NUM?MIN_NUM:blue-1;
+      #endif
+      break;
+
+    case MATCH_RESET_ACTION:
+      Serial.println(F("MATCH RESET"));
+      red = MIN_NUM;
+      blue = MIN_NUM;
+      break;
+    default:
+      Serial.print(F("ERROR: Unknown Action: "));
+      Serial.println(action);
+  }
+
+  updateSign(red,blue);
+  delay(DELAY);
+}
+
+#if USE_MODES
+void handleKeyboardAction()
+{
+  switch(action)
+  {
+    case KEYBOARD_CLEAR_ACTION:
+      Serial.println(F("KEYBOARD CLEAR SIGN"));
+      updateSign("----");
+      keyboardNum = -1;
+      break;
+    case KEYBOARD_VALIDATE_ACTION:
+      Serial.println(F("KEYBOARD VALIDATE"));
+      if(keyboardNum!=-1)
+      {
+        updateSign(keyboardNum,30,255,60);
+        keyboardNum = -1;
+      }
+      break;
+    case KEYBOARD_NUM_ACTION:
+      Serial.print(F("KEYBOARD NUM SELECTED: "));Serial.println(keyboardDigit);
+      if(keyboardNum == -1)
+      {
+        keyboardNum = keyboardDigit;
+        updateSign(keyboardNum);
+      }
+      else if(keyboardNum<1000)
+      {
+        keyboardNum=(keyboardNum*10)+keyboardDigit;
+        updateSign(keyboardNum);
+      }
+      break;
+    case KEYBOARD_DELETE_NUM_ACTION:
+      Serial.println(F("KEYBOARD DELETE NUM"));
+      if(keyboardNum < 10)
+      {
+        action = KEYBOARD_CLEAR_ACTION;
+        handleKeyboardAction();
+      }
+      else
+      {
+        keyboardNum/=10;
+        updateSign(keyboardNum);
+      }
+      break;
+    default:
+      Serial.print(F("ERROR: Unknown Action: "));
+      Serial.println(action);
+  }
+  delay(DELAY);
+}
+#endif
+
 void setup()
 {
   FastLED.addLeds<NEOPIXEL,LEDS_DATA_PIN>(leds, NUM_LEDS);
-  fill_solid(leds, NUM_LEDS,CRGB::White);
+  #if DARK_MODE
+    fill_solid(leds, NUM_LEDS,0x111111);
+  #else
+    fill_solid(leds, NUM_LEDS,CRGB::White);
+  #endif
   FastLED.show();
   #if WHITE
     while (true);
@@ -497,12 +685,12 @@ void setup()
   Serial.begin(115200);
   delay(1000);
   Serial.println(F("STARTING"));
-  
-  lBlue.setDigit('H',0,255,30);
-  rBlue.setDigit('D',0,255,30);
-  lRed.setDigit('P',0,255,30);
-  rRed.setDigit(' ',0,255,30);
-  FastLED.show();
+  #if USE_MODES
+  updateSign("HDP2",0,255,30);
+  #else
+  updateSign("HDP ",0,255,30);
+  #endif
+  delay(2500);
 
   #if MODE_OF_INTERACTION == MODE_WIRED
     pinMode(redUp,INPUT_PULLUP);
@@ -520,11 +708,12 @@ void setup()
     else
     {
       Serial.println("Connection Error");
-      lBlue.setDigit('E',255,0,30);
-      rBlue.setDigit('R',255,0,30);
-      lRed.setDigit('R',255,0,30);
+      lBlue.setDigit('E',255,0,0);
+      rBlue.setDigit('R',255,0,0);
+      lRed.setDigit('R',255,0,0);
       rRed.setDigit('C',255,255,255);
       FastLED.show();
+      while(1);
     }
 
     ELECHOUSE_cc1101.setGDO(GDO0_PIN, GDO2_PIN);
@@ -538,35 +727,92 @@ void setup()
     ELECHOUSE_cc1101.SetRx();  // set Receive on
   #endif
 
-  delay(5000);
-  updateSign();
+  delay(2500);
+  #if USE_MODES
+    updateSign("OFF ");
+    delay(2000);
+    updateSign("    ");
+  #else
+    action = MATCH_RESET_ACTION;
+  #endif
   Serial.println(F("READY"));
 }
 
 void loop()
 {
+  #if USE_MODES
+  if(action == MODE_CHANGE_ACTION)
+  {
+    Serial.print(F("Changed mode from ")); Serial.print(mode);
+    mode = mode +1;
+    Serial.print(F(" to ")); Serial.println(mode);
+
+    switch(mode)
+    {
+      case MODE_MATCH:
+        action = MATCH_RESET_ACTION;
+        break;
+      case MODE_KEYBOARD:
+        action = KEYBOARD_CLEAR_ACTION;
+        break;
+      case MODE_NULL:
+        mode = MODE_OFF;
+      case MODE_OFF:
+        updateSign("OFF ");
+        delay(2000);
+        updateSign("    ");
+        action = NO_ACTION;
+        break;
+    }
+  }
+  else
+  #endif
+  if(action != NO_ACTION)
+  {
+    #if USE_MODES
+    switch(mode)
+    {
+      case MODE_MATCH:
+        handleMatchAction();
+        break;
+      case MODE_KEYBOARD:
+        handleKeyboardAction();
+        break;
+      case MODE_NULL:
+        mode = MODE_OFF;
+        break;
+    }
+    #else
+      handleMatchAction();
+    #endif
+    action = NO_ACTION;
+	#if MODE_OF_INTERACTION == MODE_IR
+	  IrReceiver.resume(); // Enable receiving of the next value
+	#endif
+  }
+
   #if MODE_OF_INTERACTION == MODE_IR
     if (IrReceiver.decode())
     {
       if(IrReceiver.decodedIRData.command == RED_UP_IR_CMD)
       {
-        action = RED_UP_ACTION;
+        action = MATCH_RED_UP_ACTION;
       }
       else if(IrReceiver.decodedIRData.command == RED_DOWN_IR_CMD)
       {
-        action = RED_DOWN_ACTION;
+        action = MATCH_RED_DOWN_ACTION;
       }
       else if(IrReceiver.decodedIRData.command == BLUE_UP_IR_CMD)
       {
-        action = BLUE_UP_ACTION;
+        action = MATCH_BLUE_UP_ACTION;
       }
       else if(IrReceiver.decodedIRData.command == BLUE_DOWN_IR_CMD)
       {
-        action = BLUE_DOWN_ACTION;
+        action = MATCH_BLUE_DOWN_ACTION;
       }
       else if(IrReceiver.decodedIRData.command == RESET_IR_CMD)
       {
-        action = RESET_ACTION;
+        action = MATCH_RESET_ACTION;
       }
       else
       {
@@ -576,30 +822,30 @@ void loop()
   #elif MODE_OF_INTERACTION == MODE_WIRED
     if(!digitalRead(redUp))
     {
-      action = RED_UP_ACTION;
+      action = MATCH_RED_UP_ACTION;
     }
     else if(!digitalRead(redDown))
     {
-      action = RED_DOWN_ACTION;
+      action = MATCH_RED_DOWN_ACTION;
     }
     else if(!digitalRead(blueUp))
     {
-      action = BLUE_UP_ACTION;
+      action = MATCH_BLUE_UP_ACTION;
     }
     else if(!digitalRead(blueDown))
     {
-      action = BLUE_DOWN_ACTION;
+      action = MATCH_BLUE_DOWN_ACTION;
     }
     else if(!digitalRead(reset))
     {
-      action = RESET_ACTION;
+      action = MATCH_RESET_ACTION;
     }
   #elif MODE_OF_INTERACTION == MODE_RF // TODO receive & interpret commands
     if(mySwitch.available())
     {
       Serial.print("Received ");
       Serial.print( mySwitch.getReceivedValue() & 0b11111111 ,DEC); // Get the data from the receiver
-      Serial.print(" / ");
+      Serial.print(" / ");, byte r = 255, byte g = 255, byte b = 255
       Serial.print( mySwitch.getReceivedBitlength() );
       Serial.print("bit ");
       Serial.print("Protocol: ");
@@ -607,58 +853,72 @@ void loop()
 
       mySwitch.resetAvailable();
     }
-  #endif
-
-  if(action != NO_ACTION)
-  {
-    switch(action)
+  #elif MODE_OF_INTERACTION == MODE_SERIAL
+    if(Serial.available())
     {
-      case RED_UP_ACTION:
-        Serial.println(F("RED UP"));
-        #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
-          red = red==MAX_NUM?MIN_NUM:red+1;
-        #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
-          red = red==MAX_NUM?MAX_NUM:red+1;
-        #endif
-        break;
+      char buff[64];
+      delay(100);
+      size_t len = Serial.readBytesUntil('\n',buff,sizeof(buff));
+      buff[len] = '\0';
 
-      case RED_DOWN_ACTION:
-        Serial.println(F("RED DOWN"));
-        #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
-          red = red==MIN_NUM?MAX_NUM:red-1;
-        #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
-          red = red==MIN_NUM?MIN_NUM:red-1;
-        #endif
-        break;
-
-      case BLUE_UP_ACTION:
-        Serial.println(F("BLUE UP"));
-        #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
-          blue = blue==MAX_NUM?MIN_NUM:blue+1;
-        #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
-          blue = blue==MAX_NUM?MAX_NUM:blue+1;
-        #endif
-        break;
-
-      case BLUE_DOWN_ACTION:
-        Serial.println(F("BLUE DOWN"));
-        #if COUNTER_BEHAVIOUR == CYCLIC_BEHAVIOUR
-          blue = blue==MIN_NUM?MAX_NUM:blue-1;
-        #elif COUNTER_BEHAVIOUR == LINEAL_BEHAVIOUR
-          blue = blue==MIN_NUM?MIN_NUM:blue-1;
-        #endif
-        break;
-
-      case RESET_ACTION:
-        Serial.println(F("RESET"));
-        red = MIN_NUM;
-        blue = MIN_NUM;
+      Serial.print(F("Received: "));Serial.println(buff);
+      
+      if(strcmp(buff,"mrup") == 0)
+      {
+        action = MATCH_RED_UP_ACTION;
+      }
+      else if(strcmp(buff,"mrdown") == 0)
+      {
+        action = MATCH_RED_DOWN_ACTION;
+      }
+      else if(strcmp(buff,"mbup") == 0)
+      {
+        action = MATCH_BLUE_UP_ACTION;
+      }
+      else if(strcmp(buff,"mbdown") == 0)
+      {
+        action = MATCH_BLUE_DOWN_ACTION;
+      }
+      else if(strcmp(buff,"mreset") == 0)
+      {
+        action = MATCH_RESET_ACTION;
+      }
+      #if USE_MODES
+      else if(strcmp(buff,"changemode") == 0)
+      {
+        action = MODE_CHANGE_ACTION;
+      }
+      else if(strcmp(buff,"kclear") == 0)
+      {
+        action = KEYBOARD_CLEAR_ACTION;
+      }
+      else if(strcmp(buff,"kok") == 0)
+      {
+        action = KEYBOARD_VALIDATE_ACTION;
+      }
+      else if(strcmp(buff,"kdel") == 0)
+      {
+        action = KEYBOARD_DELETE_NUM_ACTION;
+      }
+      else
+      {
+        keyboardDigit = buff[len-1] - '0';
+        buff[len-1] = '\0';
+        if(strcmp(buff,"knum") == 0 || strcmp(buff,"knum ") == 0)
+        {
+          action = KEYBOARD_NUM_ACTION;
+        }
+        else
+        {
+          Serial.println(F("Commands list:\nhelp: show this diagram\nchangemode: changes the operation mode between OFF, MATCH & KEYBOARD\nmrup, mrdown, mbup, mbdown: set the red/blue score 1 point up/down\nmreset: reset the match scores to 0\nkclear: clears the screen\nknum N: input the digit N\nkdel: deletes the last digit\nkok: validates the number"));
+        }        
+      }
+      #else
+      else
+      {
+        Serial.println(F("Commands list:\nhelp: show this diagram\nmrup, mrdown, mbup, mbdown: set the red/blue score 1 point up/down\nmreset: reset the match scores to 0"));
+      }
+      #endif
     }
-    updateSign();
-    delay(DELAY);
-    action = NO_ACTION;
-	#if MODE_OF_INTERACTION == MODE_IR
-	  IrReceiver.resume(); // Enable receiving of the next value
-	#endif
-  }
+  #endif
 }
