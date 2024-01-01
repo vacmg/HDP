@@ -10,20 +10,25 @@
 #define CYCLIC_BEHAVIOUR 0
 #define LINEAL_BEHAVIOUR 1
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+#define AT " AT " __FILE__ ":" TOSTRING(__LINE__) ": "
+#define pause() do{Serial.println(AT"press any key to continue");while(!Serial.available());while(Serial.available()){Serial.read();}}while(0)
+
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
-#define USE_MODES true
+#define USE_MODES true // true si quieres usar la nueva version con el modo teclado para escribir numeros
 #define COUNTER_BEHAVIOUR CYCLIC_BEHAVIOUR // El modo del contador, ciclico: cuando llega al maximo, vuelve al minimo y viceversa; lineal: al llegar al maximo/minimo se queda en el
-#define MODE_OF_INTERACTION MODE_SERIAL // Aqui se selecciona el modo de interaccion
+#define MODE_OF_INTERACTION MODE_IR // Aqui se selecciona el modo de interaccion
 #define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
-#define DARK_MODE true // Si vale true, disminuye el brillo de los leds 
+#define DARK_MODE false // Si vale true, disminuye el brillo de los leds 
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
 
 //////////////////////////////////////////     CHECKS     //////////////////////////////////////////////////
 
-#if USE_MODES && (MODE_OF_INTERACTION != MODE_SERIAL || false )
-  #error Incompatible set of configurations USE_MODES == true && MODE_OF_INTERACTION != MODE_SERIAL
+#if USE_MODES && MODE_OF_INTERACTION != MODE_SERIAL && MODE_OF_INTERACTION != MODE_IR
+  #error Incompatible set of configurations USE_MODES == true && MODE_OF_INTERACTION != MODE_SERIAL && MODE_OF_INTERACTION != MODE_IR
 #endif
 
 #if MODE_OF_INTERACTION == MODE_RF
@@ -42,11 +47,28 @@
   #define IR_RECEIVE_PIN 2 // To be compatible with interrupt example, pin 2 is chosen here.
   #define DECODE_NEC // Includes Apple and Onkyo
 
-  #define RED_UP_IR_CMD 0x5E
-  #define RED_DOWN_IR_CMD 0x4A
-  #define BLUE_UP_IR_CMD 0xC
-  #define BLUE_DOWN_IR_CMD 0x42
-  #define RESET_IR_CMD 0x1C
+  #define RED_UP_IR_CMD 0x40 // NEXT
+  #define RED_DOWN_IR_CMD 0x44 // PREV
+  #define BLUE_UP_IR_CMD 0x15 // +
+  #define BLUE_DOWN_IR_CMD 0x7 // -
+  #define MATCH_RESET_IR_CMD 0x46 // CH
+  #define MODE_CHANGE_CMD 0x9 // EQ
+  #define KEYBOARD_CLEAR_CMD 0x43 // Play/Pause
+  #define KEYBOARD_DELETE_NUM_CMD 0x19 // +100
+  #define KEYBOARD_VALIDATE_CMD 0xD // +200
+  #define KEYBOARD_NUM_0_CMD 0x16
+  #define KEYBOARD_NUM_1_CMD 0xC
+  #define KEYBOARD_NUM_2_CMD 0x18
+  #define KEYBOARD_NUM_3_CMD 0x5E
+  #define KEYBOARD_NUM_4_CMD 0x8
+  #define KEYBOARD_NUM_5_CMD 0x1C
+  #define KEYBOARD_NUM_6_CMD 0x5A
+  #define KEYBOARD_NUM_7_CMD 0x42
+  #define KEYBOARD_NUM_8_CMD 0x52
+  #define KEYBOARD_NUM_9_CMD 0x4A
+
+  // KEYBOARD_NUM_ACTION} Action;
+
 
   #include <IRremote.hpp>
 #elif MODE_OF_INTERACTION == MODE_WIRED
@@ -544,15 +566,18 @@ void updateSign(uint16_t num, byte r = 255, byte g = 255, byte b = 255)
 {
   byte digit = num%10;
   rRed.setDigit(digit+'0', r, g, b);
+
   num/=10;
   digit = num%10;
-  lRed.setDigit(digit==0?' ':digit+'0', r, g, b);
+  lRed.setDigit(digit==0 && num == 0?' ':digit+'0', r, g, b);
+
   num/=10;
   digit = num%10;
-  rBlue.setDigit(digit==0?' ':digit+'0', r, g, b);
+  rBlue.setDigit(digit==0 && num == 0?' ':digit+'0', r, g, b);
+
   num/=10;
   digit = num%10;
-  lBlue.setDigit(digit==0?' ':digit+'0', r, g, b);
+  lBlue.setDigit(digit==0 && num == 0?' ':digit+'0', r, g, b);
 }
 
 void updateSign(const char str[5], byte r = 255, byte g = 255, byte b = 255)
@@ -762,10 +787,12 @@ void loop()
         delay(2000);
         updateSign("    ");
         action = NO_ACTION;
+        #if MODE_OF_INTERACTION == MODE_IR
+	        IrReceiver.resume(); // Enable receiving of the next value
+	      #endif
         break;
     }
   }
-  else
   #endif
   if(action != NO_ACTION)
   {
@@ -773,12 +800,15 @@ void loop()
     switch(mode)
     {
       case MODE_MATCH:
+        Serial.println(F("Using MODE_MATCH"));
         handleMatchAction();
         break;
       case MODE_KEYBOARD:
+      Serial.println(F("Using MODE_KEYBOARD"));
         handleKeyboardAction();
         break;
       case MODE_NULL:
+      Serial.println(F("Using MODE_NULL"));
         mode = MODE_OFF;
         break;
     }
@@ -786,37 +816,87 @@ void loop()
       handleMatchAction();
     #endif
     action = NO_ACTION;
-	#if MODE_OF_INTERACTION == MODE_IR
-	  IrReceiver.resume(); // Enable receiving of the next value
-	#endif
+	  #if MODE_OF_INTERACTION == MODE_IR
+	    IrReceiver.resume(); // Enable receiving of the next value
+	  #endif
   }
+
 
   #if MODE_OF_INTERACTION == MODE_IR
     if (IrReceiver.decode())
     {
-      if(IrReceiver.decodedIRData.command == RED_UP_IR_CMD)
+      switch(IrReceiver.decodedIRData.command)
       {
-        action = MATCH_RED_UP_ACTION;
-      }
-      else if(IrReceiver.decodedIRData.command == RED_DOWN_IR_CMD)
-      {
-        action = MATCH_RED_DOWN_ACTION;
-      }
-      else if(IrReceiver.decodedIRData.command == BLUE_UP_IR_CMD)
-      {
-        action = MATCH_BLUE_UP_ACTION;
-      }
-      else if(IrReceiver.decodedIRData.command == BLUE_DOWN_IR_CMD)
-      {
-        action = MATCH_BLUE_DOWN_ACTION;
-      }
-      else if(IrReceiver.decodedIRData.command == RESET_IR_CMD)
-      {
-        action = MATCH_RESET_ACTION;
-      }
-      else
-      {
-        IrReceiver.resume(); // Discard other values
+        case RED_UP_IR_CMD:
+          action = MATCH_RED_UP_ACTION;
+          break;
+        case RED_DOWN_IR_CMD:
+          action = MATCH_RED_DOWN_ACTION;
+          break;
+        case BLUE_UP_IR_CMD:
+          action = MATCH_BLUE_UP_ACTION;
+          break;
+        case BLUE_DOWN_IR_CMD:
+          action = MATCH_BLUE_DOWN_ACTION;
+          break;
+        case MATCH_RESET_IR_CMD:
+          action = MATCH_RESET_ACTION;
+          break;
+        case MODE_CHANGE_CMD:
+          action = MODE_CHANGE_ACTION;
+          break;
+        case KEYBOARD_CLEAR_CMD:
+          action = KEYBOARD_CLEAR_ACTION;
+          break;
+        case KEYBOARD_DELETE_NUM_CMD:
+          action = KEYBOARD_DELETE_NUM_ACTION;
+          break;
+        case KEYBOARD_VALIDATE_CMD:
+          action = KEYBOARD_VALIDATE_ACTION;
+          break;
+        case KEYBOARD_NUM_0_CMD:
+          keyboardDigit = 0;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_1_CMD:
+          keyboardDigit = 1;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_2_CMD:
+          keyboardDigit = 2;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_3_CMD:
+          keyboardDigit = 3;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_4_CMD:
+          keyboardDigit = 4;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_5_CMD:
+          keyboardDigit = 5;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_6_CMD:
+          keyboardDigit = 6;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_7_CMD:
+          keyboardDigit = 7;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_8_CMD:
+          keyboardDigit = 8;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        case KEYBOARD_NUM_9_CMD:
+          keyboardDigit = 9;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+        default:
+          Serial.print(F("Unknown detected IR command: 0x"));Serial.println(IrReceiver.decodedIRData.command, HEX);
+          IrReceiver.resume(); // Discard other values
       }
     }
   #elif MODE_OF_INTERACTION == MODE_WIRED
