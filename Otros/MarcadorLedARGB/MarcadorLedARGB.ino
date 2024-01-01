@@ -52,20 +52,20 @@
   #define BLUE_UP_IR_CMD 0x15 // +
   #define BLUE_DOWN_IR_CMD 0x7 // -
   #define MATCH_RESET_IR_CMD 0x46 // CH
-  #define MODE_CHANGE_CMD 0x9 // EQ
-  #define KEYBOARD_CLEAR_CMD 0x43 // Play/Pause
-  #define KEYBOARD_DELETE_NUM_CMD 0x19 // +100
-  #define KEYBOARD_VALIDATE_CMD 0xD // +200
-  #define KEYBOARD_NUM_0_CMD 0x16
-  #define KEYBOARD_NUM_1_CMD 0xC
-  #define KEYBOARD_NUM_2_CMD 0x18
-  #define KEYBOARD_NUM_3_CMD 0x5E
-  #define KEYBOARD_NUM_4_CMD 0x8
-  #define KEYBOARD_NUM_5_CMD 0x1C
-  #define KEYBOARD_NUM_6_CMD 0x5A
-  #define KEYBOARD_NUM_7_CMD 0x42
-  #define KEYBOARD_NUM_8_CMD 0x52
-  #define KEYBOARD_NUM_9_CMD 0x4A
+  #define MODE_CHANGE_IR_CMD 0x9 // EQ
+  #define KEYBOARD_CLEAR_IR_CMD 0x43 // Play/Pause
+  #define KEYBOARD_DELETE_NUM_IR_CMD 0x19 // +100
+  #define KEYBOARD_VALIDATE_IR_CMD 0xD // +200
+  #define KEYBOARD_NUM_0_IR_CMD 0x16
+  #define KEYBOARD_NUM_1_IR_CMD 0xC
+  #define KEYBOARD_NUM_2_IR_CMD 0x18
+  #define KEYBOARD_NUM_3_IR_CMD 0x5E
+  #define KEYBOARD_NUM_4_IR_CMD 0x8
+  #define KEYBOARD_NUM_5_IR_CMD 0x1C
+  #define KEYBOARD_NUM_6_IR_CMD 0x5A
+  #define KEYBOARD_NUM_7_IR_CMD 0x42
+  #define KEYBOARD_NUM_8_IR_CMD 0x52
+  #define KEYBOARD_NUM_9_IR_CMD 0x4A
 
   // KEYBOARD_NUM_ACTION} Action;
 
@@ -732,7 +732,7 @@ void setup()
     }
     else
     {
-      Serial.println("Connection Error");
+      Serial.println("RF Connection Error");
       lBlue.setDigit('E',255,0,0);
       rBlue.setDigit('R',255,0,0);
       lRed.setDigit('R',255,0,0);
@@ -842,55 +842,55 @@ void loop()
         case MATCH_RESET_IR_CMD:
           action = MATCH_RESET_ACTION;
           break;
-        case MODE_CHANGE_CMD:
+        case MODE_CHANGE_IR_CMD:
           action = MODE_CHANGE_ACTION;
           break;
-        case KEYBOARD_CLEAR_CMD:
+        case KEYBOARD_CLEAR_IR_CMD:
           action = KEYBOARD_CLEAR_ACTION;
           break;
-        case KEYBOARD_DELETE_NUM_CMD:
+        case KEYBOARD_DELETE_NUM_IR_CMD:
           action = KEYBOARD_DELETE_NUM_ACTION;
           break;
-        case KEYBOARD_VALIDATE_CMD:
+        case KEYBOARD_VALIDATE_IR_CMD:
           action = KEYBOARD_VALIDATE_ACTION;
           break;
-        case KEYBOARD_NUM_0_CMD:
+        case KEYBOARD_NUM_0_IR_CMD:
           keyboardDigit = 0;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_1_CMD:
+        case KEYBOARD_NUM_1_IR_CMD:
           keyboardDigit = 1;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_2_CMD:
+        case KEYBOARD_NUM_2_IR_CMD:
           keyboardDigit = 2;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_3_CMD:
+        case KEYBOARD_NUM_3_IR_CMD:
           keyboardDigit = 3;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_4_CMD:
+        case KEYBOARD_NUM_4_IR_CMD:
           keyboardDigit = 4;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_5_CMD:
+        case KEYBOARD_NUM_5_IR_CMD:
           keyboardDigit = 5;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_6_CMD:
+        case KEYBOARD_NUM_6_IR_CMD:
           keyboardDigit = 6;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_7_CMD:
+        case KEYBOARD_NUM_7_IR_CMD:
           keyboardDigit = 7;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_8_CMD:
+        case KEYBOARD_NUM_8_IR_CMD:
           keyboardDigit = 8;
           action = KEYBOARD_NUM_ACTION;
           break;
-        case KEYBOARD_NUM_9_CMD:
+        case KEYBOARD_NUM_9_IR_CMD:
           keyboardDigit = 9;
           action = KEYBOARD_NUM_ACTION;
           break;
@@ -923,9 +923,10 @@ void loop()
   #elif MODE_OF_INTERACTION == MODE_RF // TODO receive & interpret commands
     if(mySwitch.available())
     {
+      uint16_t value = mySwitch.getReceivedValue() & 0b11111111;
       Serial.print("Received ");
-      Serial.print( mySwitch.getReceivedValue() & 0b11111111 ,DEC); // Get the data from the receiver
-      Serial.print(" / ");, byte r = 255, byte g = 255, byte b = 255
+      Serial.print( value, DEC); // Get the data from the receiver
+      Serial.print(" / ");
       Serial.print( mySwitch.getReceivedBitlength() );
       Serial.print("bit ");
       Serial.print("Protocol: ");
