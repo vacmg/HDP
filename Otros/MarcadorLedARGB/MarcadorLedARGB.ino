@@ -16,13 +16,15 @@
 #define pause() do{Serial.println(AT"press any key to continue");while(!Serial.available());while(Serial.available()){Serial.read();}}while(0)
 
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
-#define USE_MODES true // true si quieres usar la nueva version con el modo teclado para escribir numeros
+#define USE_MODES false // true si quieres usar la nueva version con el modo teclado para escribir numeros
 #define COUNTER_BEHAVIOUR CYCLIC_BEHAVIOUR // El modo del contador, ciclico: cuando llega al maximo, vuelve al minimo y viceversa; lineal: al llegar al maximo/minimo se queda en el
-#define MODE_OF_INTERACTION MODE_IR // Aqui se selecciona el modo de interaccion
+#define MODE_OF_INTERACTION MODE_RF // Aqui se selecciona el modo de interaccion
 #define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
-#define DARK_MODE false // Si vale true, disminuye el brillo de los leds 
+#define DARK_MODE true // Si vale true, disminuye el brillo de los leds 
+
+#define TEST_RF true // Si esta en true se activa un modo especial para sacar los codigos del mando rf
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
 
 //////////////////////////////////////////     CHECKS     //////////////////////////////////////////////////
@@ -31,7 +33,7 @@
   #error Incompatible set of configurations USE_MODES == true && MODE_OF_INTERACTION != MODE_SERIAL && MODE_OF_INTERACTION != MODE_IR
 #endif
 
-#if MODE_OF_INTERACTION == MODE_RF
+#if MODE_OF_INTERACTION == MODE_RF && !TEST_RF
   #error MODE_RF NOT READY YET
 #endif
 
@@ -761,6 +763,32 @@ void setup()
     action = MATCH_RESET_ACTION;
   #endif
   Serial.println(F("READY"));
+
+  #if TEST_RF
+  updateSign("TEST",255,255,0);
+  delay(3000);
+  updateSign("----",255,255,0);
+  Serial.println(F("Testing RF..."));
+  while(1)
+  {
+    if(mySwitch.available())
+    {
+      uint16_t value = mySwitch.getReceivedValue() & 0b11111111;
+      Serial.print("Received ");
+      Serial.print( value, DEC); // Get the data from the receiver
+      Serial.print(" / ");
+      Serial.print( mySwitch.getReceivedBitlength() );
+      Serial.print("bit ");
+      Serial.print("Protocol: ");
+      Serial.println( mySwitch.getReceivedProtocol() );
+
+      updateSign(value,255,255,0);
+      delay(500);
+
+      mySwitch.resetAvailable();
+    }
+  }
+  #endif
 }
 
 void loop()
