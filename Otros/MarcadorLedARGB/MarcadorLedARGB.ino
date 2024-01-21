@@ -18,7 +18,7 @@
 //////////////////////////////////////////     SETTINGS     ////////////////////////////////////////////////
 #define USE_MODES true // true si quieres usar la nueva version con el modo teclado para escribir numeros
 #define COUNTER_BEHAVIOUR CYCLIC_BEHAVIOUR // El modo del contador, ciclico: cuando llega al maximo, vuelve al minimo y viceversa; lineal: al llegar al maximo/minimo se queda en el
-#define MODE_OF_INTERACTION MODE_IR // Aqui se selecciona el modo de interaccion
+#define MODE_OF_INTERACTION MODE_RF // Aqui se selecciona el modo de interaccion
 #define ALWAYS_USE_2_DIGITS true // a true para tener numeros de 0-9 de la forma 0X, y false para tenerlos de la forma X
 #define WHITE false // si quieres probar la conexion con leds blancos, pon esto a true
 #define DELAY 500 // el tiempo que tarda desde que pulsas un boton hasta que el arduino reconoce la siguente pulsacion
@@ -27,12 +27,8 @@
 
 //////////////////////////////////////////     CHECKS     //////////////////////////////////////////////////
 
-#if USE_MODES && MODE_OF_INTERACTION != MODE_SERIAL && MODE_OF_INTERACTION != MODE_IR
+#if USE_MODES && MODE_OF_INTERACTION != MODE_SERIAL && MODE_OF_INTERACTION != MODE_IR && MODE_OF_INTERACTION != MODE_RF
   #error Incompatible set of configurations USE_MODES == true && MODE_OF_INTERACTION != MODE_SERIAL && MODE_OF_INTERACTION != MODE_IR
-#endif
-
-#if MODE_OF_INTERACTION == MODE_RF
-  #error MODE_RF NOT READY YET
 #endif
 
 //////////////////////////////////////////     CHECKS     //////////////////////////////////////////////////
@@ -82,7 +78,26 @@
   #define GDO0_PIN 9
   #define GDO2_PIN 2
 
-  #define CMDs XX
+  #define RED_UP_RF_CMD 0xC3 // 9
+  #define RED_DOWN_RF_CMD 0x33 // 15
+  #define BLUE_UP_RF_CMD 0x3F // 7
+  #define BLUE_DOWN_RF_CMD 0xFF // 13
+  #define MATCH_RESET_RF_CMD 0x3C // 6
+
+  #define MODE_CHANGE_RF_CMD 0xCF // 5
+  #define KEYBOARD_CLEAR_RF_CMD 0x0C // 2
+  #define KEYBOARD_DELETE_NUM_RF_CMD 0x30 // 3
+  #define KEYBOARD_VALIDATE_RF_CMD 0xCC // 4
+  #define KEYBOARD_NUM_0_RF_CMD 0x3C // 6
+  #define KEYBOARD_NUM_1_RF_CMD 0xFF // 13
+  #define KEYBOARD_NUM_2_RF_CMD 0xC0 // 14
+  #define KEYBOARD_NUM_3_RF_CMD 0x33 // 15
+  #define KEYBOARD_NUM_4_RF_CMD 0x0F // 10
+  #define KEYBOARD_NUM_5_RF_CMD 0xFC // 11
+  #define KEYBOARD_NUM_6_RF_CMD 0xF3 // 12
+  #define KEYBOARD_NUM_7_RF_CMD 0x3F // 7
+  #define KEYBOARD_NUM_8_RF_CMD 0xF0 // 8
+  #define KEYBOARD_NUM_9_RF_CMD 0xC3 // 9
 
   #include <ELECHOUSE_CC1101_SRC_DRV.h>
   #include <RCSwitch.h>
@@ -769,7 +784,7 @@ void loop()
   if(action == MODE_CHANGE_ACTION)
   {
     Serial.print(F("Changed mode from ")); Serial.print(mode);
-    mode = mode +1;
+    mode = (Mode)(mode + 1);
     Serial.print(F(" to ")); Serial.println(mode);
 
     switch(mode)
@@ -789,7 +804,9 @@ void loop()
         action = NO_ACTION;
         #if MODE_OF_INTERACTION == MODE_IR
 	        IrReceiver.resume(); // Enable receiving of the next value
-	      #endif
+	      #elif MODE_OF_INTERACTION == MODE_RF
+          mySwitch.resetAvailable();
+        #endif
         break;
     }
   }
@@ -818,7 +835,9 @@ void loop()
     action = NO_ACTION;
 	  #if MODE_OF_INTERACTION == MODE_IR
 	    IrReceiver.resume(); // Enable receiving of the next value
-	  #endif
+	  #elif MODE_OF_INTERACTION == MODE_RF
+      mySwitch.resetAvailable();
+    #endif
   }
 
 
@@ -924,15 +943,134 @@ void loop()
     if(mySwitch.available())
     {
       uint16_t value = mySwitch.getReceivedValue() & 0b11111111;
-      Serial.print("Received ");
-      Serial.print( value, DEC); // Get the data from the receiver
-      Serial.print(" / ");
-      Serial.print( mySwitch.getReceivedBitlength() );
-      Serial.print("bit ");
-      Serial.print("Protocol: ");
-      Serial.println( mySwitch.getReceivedProtocol() );
 
-      mySwitch.resetAvailable();
+      switch(value)
+      {
+        case RED_UP_RF_CMD: // KEYBOARD_NUM_9_RF_CMD
+          switch(mode)
+          {
+            case MODE_MATCH:
+              action = MATCH_RED_UP_ACTION;
+            break;
+            case MODE_KEYBOARD:
+              keyboardDigit = 9;
+              action = KEYBOARD_NUM_ACTION;
+            break;
+            default:
+              Serial.print(F("Unknown detected RF command: 0x"));Serial.println(value, HEX);
+              mySwitch.resetAvailable(); // Discard other values
+          }
+        break;
+
+        case RED_DOWN_RF_CMD: // KEYBOARD_NUM_3_RF_CMD
+          switch(mode)
+          {
+            case MODE_MATCH:
+              action = MATCH_RED_DOWN_ACTION;
+            break;
+            case MODE_KEYBOARD:
+              keyboardDigit = 3;
+              action = KEYBOARD_NUM_ACTION;
+            break;
+            default:
+              Serial.print(F("Unknown detected RF command: 0x"));Serial.println(value, HEX);
+              mySwitch.resetAvailable(); // Discard other values
+          }
+        break;
+
+        case BLUE_UP_RF_CMD: // KEYBOARD_NUM_7_RF_CMD
+          switch(mode)
+          {
+            case MODE_MATCH:
+              action = MATCH_BLUE_UP_ACTION;
+            break;
+            case MODE_KEYBOARD:
+              keyboardDigit = 7;
+              action = KEYBOARD_NUM_ACTION;
+            break;
+            default:
+              Serial.print(F("Unknown detected RF command: 0x"));Serial.println(value, HEX);
+              mySwitch.resetAvailable(); // Discard other values
+          }
+        break;
+
+        case BLUE_DOWN_RF_CMD: // KEYBOARD_NUM_1_RF_CMD
+          switch(mode)
+          {
+            case MODE_MATCH:
+              action = MATCH_BLUE_DOWN_ACTION;
+            break;
+            case MODE_KEYBOARD:
+              keyboardDigit = 1;
+              action = KEYBOARD_NUM_ACTION;
+            break;
+            default:
+              Serial.print(F("Unknown detected RF command: 0x"));Serial.println(value, HEX);
+              mySwitch.resetAvailable(); // Discard other values
+          }
+        break;
+
+        case MATCH_RESET_RF_CMD: // KEYBOARD_NUM_0_RF_CMD
+          switch(mode)
+          {
+            case MODE_MATCH:
+              action = MATCH_RESET_ACTION;
+            break;
+            case MODE_KEYBOARD:
+              keyboardDigit = 0;
+              action = KEYBOARD_NUM_ACTION;
+            break;
+            default:
+              Serial.print(F("Unknown detected RF command: 0x"));Serial.println(value, HEX);
+              mySwitch.resetAvailable(); // Discard other values
+          }
+        break;
+
+        case MODE_CHANGE_RF_CMD:
+          action = MODE_CHANGE_ACTION;
+          break;
+
+        case KEYBOARD_CLEAR_RF_CMD:
+          action = KEYBOARD_CLEAR_ACTION;
+          break;
+
+        case KEYBOARD_DELETE_NUM_RF_CMD:
+          action = KEYBOARD_DELETE_NUM_ACTION;
+          break;
+
+        case KEYBOARD_VALIDATE_RF_CMD:
+          action = KEYBOARD_VALIDATE_ACTION;
+          break;
+
+        case KEYBOARD_NUM_2_RF_CMD:
+          keyboardDigit = 2;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+
+        case KEYBOARD_NUM_4_RF_CMD:
+          keyboardDigit = 4;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+
+        case KEYBOARD_NUM_5_RF_CMD:
+          keyboardDigit = 5;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+
+        case KEYBOARD_NUM_6_RF_CMD:
+          keyboardDigit = 6;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+
+        case KEYBOARD_NUM_8_RF_CMD:
+          keyboardDigit = 8;
+          action = KEYBOARD_NUM_ACTION;
+          break;
+
+        default:
+          Serial.print(F("Unknown detected RF command: 0x"));Serial.println(value, HEX);
+          mySwitch.resetAvailable(); // Discard other values
+      }
     }
   #elif MODE_OF_INTERACTION == MODE_SERIAL
     if(Serial.available())
