@@ -1049,15 +1049,35 @@ bool loadConfiguration() {
     if (loadedConfig.magicNumber != CONFIG_MAGIC_NUMBER || loadedConfig.version != CONFIG_VERSION) {
          Serial.println(F("[CONFIG] Datos inválidos o versión incorrecta. Usando valores por defecto y guardando."));
          scheduler.clearSchedule();
+         
+         Serial.println(F("mainVoltageController.setVMin(INITIAL_VMIN); mainVoltageController.setVMax(INITIAL_VMAX);"));
          mainVoltageController.setVMin(INITIAL_VMIN); mainVoltageController.setVMax(INITIAL_VMAX);
+
+         Serial.println(F("pumpVoltageController.setVMin(INITIAL_PUMP_VMIN); pumpVoltageController.setVMax(INITIAL_PUMP_VMAX);"));
          pumpVoltageController.setVMin(INITIAL_PUMP_VMIN); pumpVoltageController.setVMax(INITIAL_PUMP_VMAX);
+
+         Serial.println(F("irrigationController.setMaxCyclesPerDay(INITIAL_MAX_CYCLES_PER_DAY);"));
          irrigationController.setMaxCyclesPerDay(INITIAL_MAX_CYCLES_PER_DAY);
+
+         Serial.println(F("irrigationController.setPumpTimeout(INITIAL_PUMP_TIMEOUT_S);"));
          irrigationController.setPumpTimeout(INITIAL_PUMP_TIMEOUT_S);
+
+         Serial.println(F("irrigationController.setValveOpenDuration(INITIAL_VALVE_OPEN_DURATION_S);"));
          irrigationController.setValveOpenDuration(INITIAL_VALVE_OPEN_DURATION_S);
+
+         Serial.println(F("irrigationController.enableDailyLimit(INITIAL_DAILY_LIMIT_ENABLED);"));
          irrigationController.enableDailyLimit(INITIAL_DAILY_LIMIT_ENABLED);
+
+         Serial.println(F("irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);"));
          irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);
+
+         Serial.println(F("lastDayOfMonth = rtc.now().day();"));
          lastDayOfMonth = rtc.now().day();
+
+         Serial.println(F("saveConfiguration();"));
          saveConfiguration();
+
+         Serial.println(F("Se muere en otro sitio"));
          return false;
     } else {
          Serial.println(F("[CONFIG] Configuración válida encontrada. Aplicando..."));
