@@ -776,13 +776,17 @@ public:
 
     bool setValveOpenDuration(unsigned long durationSeconds)
     {
+        Serial.println(F("bool setValveOpenDuration(unsigned long durationSeconds)"));
         if (durationSeconds > 0) {
+            Serial.println(F("if (durationSeconds > 0 --> TRUE"));
             unsigned long newDurationMs = durationSeconds * 1000UL;
             if (_valveOpenDurationMs != newDurationMs) {
+                Serial.println(F(" if (_valveOpenDurationMs != newDurationMs) --> TRUE"));
                 _valveOpenDurationMs = newDurationMs;
                 Serial.printf("[%s] Duración de válvula actualizada a: %lu s\n", CONTROLLER_TAG, durationSeconds);
                 return true;
             }
+            Serial.println(F("XXX - return false;"));
             return false;
         } else {
             Serial.printf("[%s] Error: Duración de válvula debe ser mayor que 0 segundos.\n", CONTROLLER_TAG);
@@ -1267,6 +1271,9 @@ void setup()
     voltageSensor.begin();
     mainVoltageController.begin();
     pumpVoltageController.begin();
+
+    Serial.println(F("XXX - Vamos a esperar un poco (10s) para ver si es cosa del setup, o de alguna otra rutina"));
+    delay(10000);
 
     loadConfiguration();
 
