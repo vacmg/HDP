@@ -1313,7 +1313,7 @@ void setup()
     // Serial.printf("[MAIN] Duración Válvula: %lu s\n", irrigationController.getValveOpenDurationSeconds());
     // printHelp();
     delay(3000);
-    Serial.println(F("Leaving setup :D");
+    Serial.println(F("Leaving setup :D"));
     while(1); // TODO remove this line
 }
 
