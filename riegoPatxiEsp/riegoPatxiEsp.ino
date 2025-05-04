@@ -1248,19 +1248,6 @@ void setup()
     mainVoltageController.begin();
     pumpVoltageController.begin();
 
-    loadConfiguration();
-
-    irrigationController.begin();
-    scheduler.begin();
-    Serial.println(F("[MAIN] Hardware y Controladores inicializados."));
-
-    Serial.printf("[WiFi] Conectando a: %s\n", WIFI_SSID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-    server.on("/", HTTP_GET, handleRoot);
-    server.onNotFound(handleNotFound);
-
     Serial.printf("[MAIN] Inicializando I2C en pines SDA=%d, SCL=%d\n", RTC_SDA_PIN, RTC_SCL_PIN);
     if (!Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN)) { Serial.println(F("[MAIN] ¡Error al inicializar I2C! Deteniendo.")); while(1) { mainVoltageController.update(); delay(100); } }
     else { Serial.println(F("[MAIN] I2C Inicializado correctamente.")); }
@@ -1275,6 +1262,20 @@ void setup()
         }
          Serial.println(F("[MAIN] RTC OK."));
     }
+
+    irrigationController.begin();
+    scheduler.begin();
+
+    Serial.println(F("[MAIN] Hardware y Controladores inicializados."));
+
+    loadConfiguration();
+
+    Serial.printf("[WiFi] Conectando a: %s\n", WIFI_SSID);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+    server.on("/", HTTP_GET, handleRoot);
+    server.onNotFound(handleNotFound);
 
     Serial.println(F("---[MAIN] Setup Completo ---"));
     Serial.printf("[MAIN] Umbrales Carga: vMin=%.2f V, vMax=%.2f V\n", mainVoltageController.getVMin(), mainVoltageController.getVMax());
