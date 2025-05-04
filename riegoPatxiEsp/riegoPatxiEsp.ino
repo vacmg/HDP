@@ -776,17 +776,13 @@ public:
 
     bool setValveOpenDuration(unsigned long durationSeconds)
     {
-        Serial.println(F("bool setValveOpenDuration(unsigned long durationSeconds)"));
         if (durationSeconds > 0) {
-            Serial.println(F("if (durationSeconds > 0 --> TRUE"));
             unsigned long newDurationMs = durationSeconds * 1000UL;
             if (_valveOpenDurationMs != newDurationMs) {
-                Serial.println(F(" if (_valveOpenDurationMs != newDurationMs) --> TRUE"));
                 _valveOpenDurationMs = newDurationMs;
                 Serial.printf("[%s] Duración de válvula actualizada a: %lu s\n", CONTROLLER_TAG, durationSeconds);
                 return true;
             }
-            Serial.println(F("XXX - return false;"));
             return false;
         } else {
             Serial.printf("[%s] Error: Duración de válvula debe ser mayor que 0 segundos.\n", CONTROLLER_TAG);
@@ -796,7 +792,6 @@ public:
 
     void applyTimeoutLockoutState(bool lockoutState)
     {
-        Serial.println(F("applyTimeoutLockoutState()"));Serial.flush();
         if (_timeoutLockoutActive != lockoutState)
         {
              _timeoutLockoutActive = lockoutState;
@@ -1054,31 +1049,15 @@ bool loadConfiguration() {
     if (loadedConfig.magicNumber != CONFIG_MAGIC_NUMBER || loadedConfig.version != CONFIG_VERSION) {
          Serial.println(F("[CONFIG] Datos inválidos o versión incorrecta. Usando valores por defecto y guardando."));
          scheduler.clearSchedule();
-         
          mainVoltageController.setVMin(INITIAL_VMIN); mainVoltageController.setVMax(INITIAL_VMAX);
-
          pumpVoltageController.setVMin(INITIAL_PUMP_VMIN); pumpVoltageController.setVMax(INITIAL_PUMP_VMAX);
-
          irrigationController.setMaxCyclesPerDay(INITIAL_MAX_CYCLES_PER_DAY);
-
          irrigationController.setPumpTimeout(INITIAL_PUMP_TIMEOUT_S);
-
          irrigationController.setValveOpenDuration(INITIAL_VALVE_OPEN_DURATION_S);
-
          irrigationController.enableDailyLimit(INITIAL_DAILY_LIMIT_ENABLED);
-
-         Serial.println(F("irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);"));Serial.flush();
-         Serial.print(F("INITIAL_TIMEOUT_LOCKOUT: "));Serial.println(INITIAL_TIMEOUT_LOCKOUT);Serial.flush();
-         Serial.print(F("irrigationController: "));Serial.printf("%p\n",irrigationController);Serial.flush();
          irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);
-
-         Serial.println(F("lastDayOfMonth = rtc.now().day();"));
          lastDayOfMonth = rtc.now().day();
-
-         Serial.println(F("saveConfiguration();"));Serial.flush();
          saveConfiguration();
-
-         Serial.println(F("Se muere en otro sitio"));Serial.flush();
          return false;
     } else {
          Serial.println(F("[CONFIG] Configuración válida encontrada. Aplicando..."));
@@ -1308,8 +1287,6 @@ void setup()
     Serial.printf("[MAIN] Duración Válvula: %lu s\n", irrigationController.getValveOpenDurationSeconds());
     printHelp();
     delay(3000);
-    Serial.println(F("Leaving setup :D"));
-    while(1); // TODO remove this line
 }
 
 // --- Loop ---
