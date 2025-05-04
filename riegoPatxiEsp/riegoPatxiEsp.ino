@@ -796,6 +796,7 @@ public:
 
     void applyTimeoutLockoutState(bool lockoutState)
     {
+        Serial.println(F("applyTimeoutLockoutState()"));Serial.flush();
         if (_timeoutLockoutActive != lockoutState)
         {
              _timeoutLockoutActive = lockoutState;
@@ -1054,34 +1055,30 @@ bool loadConfiguration() {
          Serial.println(F("[CONFIG] Datos inválidos o versión incorrecta. Usando valores por defecto y guardando."));
          scheduler.clearSchedule();
          
-         Serial.println(F("mainVoltageController.setVMin(INITIAL_VMIN); mainVoltageController.setVMax(INITIAL_VMAX);"));
          mainVoltageController.setVMin(INITIAL_VMIN); mainVoltageController.setVMax(INITIAL_VMAX);
 
-         Serial.println(F("pumpVoltageController.setVMin(INITIAL_PUMP_VMIN); pumpVoltageController.setVMax(INITIAL_PUMP_VMAX);"));
          pumpVoltageController.setVMin(INITIAL_PUMP_VMIN); pumpVoltageController.setVMax(INITIAL_PUMP_VMAX);
 
-         Serial.println(F("irrigationController.setMaxCyclesPerDay(INITIAL_MAX_CYCLES_PER_DAY);"));
          irrigationController.setMaxCyclesPerDay(INITIAL_MAX_CYCLES_PER_DAY);
 
-         Serial.println(F("irrigationController.setPumpTimeout(INITIAL_PUMP_TIMEOUT_S);"));
          irrigationController.setPumpTimeout(INITIAL_PUMP_TIMEOUT_S);
 
-         Serial.println(F("irrigationController.setValveOpenDuration(INITIAL_VALVE_OPEN_DURATION_S);"));
          irrigationController.setValveOpenDuration(INITIAL_VALVE_OPEN_DURATION_S);
 
-         Serial.println(F("irrigationController.enableDailyLimit(INITIAL_DAILY_LIMIT_ENABLED);"));
          irrigationController.enableDailyLimit(INITIAL_DAILY_LIMIT_ENABLED);
 
-         Serial.println(F("irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);"));
+         Serial.println(F("irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);"));Serial.flush();
+         Serial.print(F("INITIAL_TIMEOUT_LOCKOUT: "));Serial.println(INITIAL_TIMEOUT_LOCKOUT);Serial.flush();
+         Serial.print(F("irrigationController: "));Serial.printf("%p\n",irrigationController);Serial.flush();
          irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);
 
          Serial.println(F("lastDayOfMonth = rtc.now().day();"));
          lastDayOfMonth = rtc.now().day();
 
-         Serial.println(F("saveConfiguration();"));
+         Serial.println(F("saveConfiguration();"));Serial.flush();
          saveConfiguration();
 
-         Serial.println(F("Se muere en otro sitio"));
+         Serial.println(F("Se muere en otro sitio"));Serial.flush();
          return false;
     } else {
          Serial.println(F("[CONFIG] Configuración válida encontrada. Aplicando..."));
@@ -1272,46 +1269,44 @@ void setup()
     mainVoltageController.begin();
     pumpVoltageController.begin();
 
-    // Serial.println(F("XXX - Vamos a esperar un poco (10s) para ver si es cosa del setup, o de alguna otra rutina"));
-    // delay(10000);
+    Serial.printf("[MAIN] Inicializando I2C en pines SDA=%d, SCL=%d\n", RTC_SDA_PIN, RTC_SCL_PIN);
+    if (!Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN)) { Serial.println(F("[MAIN] ¡Error al inicializar I2C! Deteniendo.")); while(1) { mainVoltageController.update(); delay(100); } }
+    else { Serial.println(F("[MAIN] I2C Inicializado correctamente.")); }
 
-    // loadConfiguration();
+    Serial.print(F("[MAIN] Inicializando RTC DS3231..."));
+    if (!rtc.begin()) { Serial.println(F(" ¡No se encontró el RTC!")); while(1) { mainVoltageController.update(); delay(100); } }
+    else {
+        Serial.println(F(" RTC encontrado."));
+        if (rtc.lostPower()) {
+            Serial.println(F("[MAIN] ¡RTC perdió energía! Ajustando hora a la de compilación."));
+            rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+        }
+         Serial.println(F("[MAIN] RTC OK."));
+    }
 
-    // irrigationController.begin();
-    // scheduler.begin();
-    // Serial.println(F("[MAIN] Hardware y Controladores inicializados."));
+    irrigationController.begin();
+    scheduler.begin();
 
-    // Serial.printf("[WiFi] Conectando a: %s\n", WIFI_SSID);
-    // WiFi.mode(WIFI_STA);
-    // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.println(F("[MAIN] Hardware y Controladores inicializados."));
 
-    // server.on("/", HTTP_GET, handleRoot);
-    // server.onNotFound(handleNotFound);
+    loadConfiguration();
 
-    // Serial.printf("[MAIN] Inicializando I2C en pines SDA=%d, SCL=%d\n", RTC_SDA_PIN, RTC_SCL_PIN);
-    // if (!Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN)) { Serial.println(F("[MAIN] ¡Error al inicializar I2C! Deteniendo.")); while(1) { mainVoltageController.update(); delay(100); } }
-    // else { Serial.println(F("[MAIN] I2C Inicializado correctamente.")); }
+    Serial.printf("[WiFi] Conectando a: %s\n", WIFI_SSID);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-    // Serial.print(F("[MAIN] Inicializando RTC DS3231..."));
-    // if (!rtc.begin()) { Serial.println(F(" ¡No se encontró el RTC!")); while(1) { mainVoltageController.update(); delay(100); } }
-    // else {
-    //     Serial.println(F(" RTC encontrado."));
-    //     if (rtc.lostPower()) {
-    //         Serial.println(F("[MAIN] ¡RTC perdió energía! Ajustando hora a la de compilación."));
-    //         rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    //     }
-    //      Serial.println(F("[MAIN] RTC OK."));
-    // }
+    server.on("/", HTTP_GET, handleRoot);
+    server.onNotFound(handleNotFound);
 
-    // Serial.println(F("---[MAIN] Setup Completo ---"));
-    // Serial.printf("[MAIN] Umbrales Carga: vMin=%.2f V, vMax=%.2f V\n", mainVoltageController.getVMin(), mainVoltageController.getVMax());
-    // Serial.printf("[MAIN] Umbrales Bomba: pvMin=%.2f V, pvMax=%.2f V\n", pumpVoltageController.getVMin(), pumpVoltageController.getVMax());
-    // Serial.printf("[MAIN] Límite Riegos/Día: %d (%s)\n",
-    //               irrigationController.getMaxCyclesPerDay(),
-    //               irrigationController.isDailyLimitEnabled() ? "Habilitado" : "Deshabilitado");
-    // Serial.printf("[MAIN] Timeout Bomba: %lu s\n", irrigationController.getPumpTimeoutSeconds());
-    // Serial.printf("[MAIN] Duración Válvula: %lu s\n", irrigationController.getValveOpenDurationSeconds());
-    // printHelp();
+    Serial.println(F("---[MAIN] Setup Completo ---"));
+    Serial.printf("[MAIN] Umbrales Carga: vMin=%.2f V, vMax=%.2f V\n", mainVoltageController.getVMin(), mainVoltageController.getVMax());
+    Serial.printf("[MAIN] Umbrales Bomba: pvMin=%.2f V, pvMax=%.2f V\n", pumpVoltageController.getVMin(), pumpVoltageController.getVMax());
+    Serial.printf("[MAIN] Límite Riegos/Día: %d (%s)\n",
+                  irrigationController.getMaxCyclesPerDay(),
+                  irrigationController.isDailyLimitEnabled() ? "Habilitado" : "Deshabilitado");
+    Serial.printf("[MAIN] Timeout Bomba: %lu s\n", irrigationController.getPumpTimeoutSeconds());
+    Serial.printf("[MAIN] Duración Válvula: %lu s\n", irrigationController.getValveOpenDurationSeconds());
+    printHelp();
     delay(3000);
     Serial.println(F("Leaving setup :D"));
     while(1); // TODO remove this line
