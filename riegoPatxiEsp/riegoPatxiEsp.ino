@@ -9,7 +9,7 @@
 
 // --- Credenciales WiFi --- 
 const char* WIFI_SSID = "patxi";
-const char* WIFI_PASSWORD = "12345678";
+const char* WIFI_PASSWORD = "12345678"; // Hardcoded for demonstration purposes. Replace with a secure password in production.
 
 // --- Definiciones de Pines ---
 const int RELAY_VOLTAGE_PIN = 0;
@@ -1296,9 +1296,10 @@ void loop()
 
     if(lastDayOfMonth != rtc.now().day())
     {
-        Serial.printf("[MAIN] Dia nuevo detectado, poniendo cyclesToday = 0\n");
+        Serial.printf("[MAIN] Dia nuevo detectado, poniendo cyclesToday = 0 y recargando configuracion\n");
         irrigationController.setCyclesToday(0);
         saveConfiguration();
+        loadConfiguration();
     }
 
     checkWiFi();
