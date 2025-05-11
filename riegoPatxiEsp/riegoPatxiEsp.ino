@@ -1296,9 +1296,10 @@ void loop()
 
     if(lastDayOfMonth != rtc.now().day())
     {
-        Serial.printf("[MAIN] Dia nuevo detectado, poniendo cyclesToday = 0\n");
+        Serial.printf("[MAIN] Dia nuevo detectado, poniendo cyclesToday = 0 y recargando configuracion\n");
         irrigationController.setCyclesToday(0);
         saveConfiguration();
+        loadConfiguration();
     }
 
     checkWiFi();
