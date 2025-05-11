@@ -9,7 +9,7 @@
 
 // --- Credenciales WiFi --- 
 const char* WIFI_SSID = "patxi";
-const char* WIFI_PASSWORD = "12345678"; // Yeah, I don't care about this :D
+const char* WIFI_PASSWORD = "12345678"; // Hardcoded for demonstration purposes. Replace with a secure password in production.
 
 // --- Definiciones de Pines ---
 const int RELAY_VOLTAGE_PIN = 0;
