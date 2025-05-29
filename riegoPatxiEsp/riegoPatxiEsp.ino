@@ -26,7 +26,7 @@ const long SERIAL_BAUD_RATE = 115200;
 const unsigned long STATUS_PRINT_INTERVAL_MS = 5000;
 const unsigned long VOLTAGE_CONTROL_INTERVAL_MS = 500;
 const unsigned long PUMP_VOLTAGE_CONTROL_INTERVAL_MS = 500;
-// const unsigned long VALVE_OPEN_DURATION_MS = 10000; // Eliminado, ahora configurable
+const unsigned long RESTART_MIN_TIME_MS = (5*60*1000);
 const unsigned long INITIAL_PUMP_TIMEOUT_S = 60;
 const unsigned long WIFI_CHECK_INTERVAL_MS = 10000;
 const unsigned long WS_STATUS_UPDATE_INTERVAL_MS = 2000;
@@ -1231,12 +1231,29 @@ void sendStatusUpdate() {
     webSocket.broadcastTXT(jsonString);
 }
 
+void controlVoltageAndRestartAfterVMinReached()
+{
+    uint32_t initialMillis = millis();
+    Serial.println(F("\n---[MAIN] Reiniciando Sistema al alcanzar VMin y RESTART_MIN_TIME_MS ---"));
+    while(1) 
+    {
+        mainVoltageController.update();
+        if (millis() - initialMillis >= RESTART_MIN_TIME_MS && voltageSensor.getVoltage() > mainVoltageController.getVMin())
+        {
+            Serial.println(F("\n---[MAIN] VMin y RESTART_MIN_TIME_MS alcanzados, reiniciando... ---"));
+            delay(1000);
+            ESP.restart();
+        }
+        delay(100);
+    }
+}
+
 
 // --- Setup ---
 void setup()
 {
     Serial.begin(SERIAL_BAUD_RATE);
-    if (!EEPROM.begin(EEPROM_SIZE)) { Serial.println("[ERROR] Fallo al inicializar EEPROM!"); }
+    if (!EEPROM.begin(EEPROM_SIZE)) { Serial.println("[ERROR] Fallo al inicializar EEPROM!"); while(1) { controlVoltageAndRestartAfterVMinReached(); } }
     else { Serial.println("[INFO] EEPROM inicializada correctamente."); }
 
     delay(1000);
@@ -1249,11 +1266,11 @@ void setup()
     pumpVoltageController.begin();
 
     Serial.printf("[MAIN] Inicializando I2C en pines SDA=%d, SCL=%d\n", RTC_SDA_PIN, RTC_SCL_PIN);
-    if (!Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN)) { Serial.println(F("[MAIN] ¡Error al inicializar I2C! Deteniendo.")); while(1) { mainVoltageController.update(); delay(100); } }
+    if (!Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN)) { Serial.println(F("[MAIN] ¡Error al inicializar I2C! Deteniendo.")); while(1) { controlVoltageAndRestartAfterVMinReached(); } }
     else { Serial.println(F("[MAIN] I2C Inicializado correctamente.")); }
 
     Serial.print(F("[MAIN] Inicializando RTC DS3231..."));
-    if (!rtc.begin()) { Serial.println(F(" ¡No se encontró el RTC!")); while(1) { mainVoltageController.update(); delay(100); } }
+    if (!rtc.begin()) { Serial.println(F(" ¡No se encontró el RTC!")); while(1) { controlVoltageAndRestartAfterVMinReached(); } }
     else {
         Serial.println(F(" RTC encontrado."));
         if (rtc.lostPower()) {
