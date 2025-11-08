@@ -41,6 +41,8 @@ const char* CMD_VALVE_ON = "a1";
 const char* CMD_VALVE_OFF = "a0";
 const char* CMD_CAMERA_ON = "c1"; // <-- NUEVO
 const char* CMD_CAMERA_OFF = "c0"; // <-- NUEVO
+const char* CMD_VOLTAGE_ON = "v1"; // <-- AÑADIDO
+const char* CMD_VOLTAGE_OFF = "v0"; // <-- AÑADIDO
 const char* CMD_STATUS = "s";
 const char* CMD_HELP = "h";
 const char* CMD_SET_VMIN_PREFIX = "vmin=";
@@ -1489,6 +1491,8 @@ void processGeneralCommand(String command)
     else if (command == CMD_PUMP_OFF) { Serial.println(F("[MAIN] Desactivando relé Bomba (manual)...")); pumpVoltageController.disable(VoltageController::FORCE_OFF); }
     else if (command == CMD_CAMERA_ON) { Serial.println(F("[MAIN] Activando relé Cámara (manual)...")); cameraVoltageController.disable(VoltageController::FORCE_ON); } // <-- NUEVO
     else if (command == CMD_CAMERA_OFF) { Serial.println(F("[MAIN] Desactivando relé Cámara (manual)...")); cameraVoltageController.disable(VoltageController::FORCE_OFF); } // <-- NUEVO
+    else if (command == CMD_VOLTAGE_ON) { Serial.println(F("[MAIN] Activando relé Voltaje (manual)...")); mainVoltageController.disable(VoltageController::FORCE_ON); } // <-- AÑADIDO
+    else if (command == CMD_VOLTAGE_OFF) { Serial.println(F("[MAIN] Desactivando relé Voltaje (manual)...")); mainVoltageController.disable(VoltageController::FORCE_OFF); } // <-- AÑADIDO
     else { Serial.println(F("[MAIN] Comando desconocido.")); }
 }
 /** @brief Procesa comandos de sistema. */
@@ -1536,6 +1540,7 @@ void printHelp()
     Serial.printf("  %s / %s : Activar / Desactivar Relé Bomba (Control Manual - Desactiva control automático)\n", CMD_PUMP_ON, CMD_PUMP_OFF);
     Serial.printf("  %s / %s : Activar(CIERRA) / Desactivar(ABRE) Relé Válvula (Control Manual)\n", CMD_VALVE_ON, CMD_VALVE_OFF);
     Serial.printf("  %s / %s : Activar / Desactivar Relé Cámara (Control Manual - Desactiva control automático)\n", CMD_CAMERA_ON, CMD_CAMERA_OFF); // <-- NUEVO
+    Serial.printf("  %s / %s : Activar / Desactivar Relé Voltaje (Control Manual - Desactiva control automático)\n", CMD_VOLTAGE_ON, CMD_VOLTAGE_OFF); // <-- AÑADIDO
     Serial.printf("  %s=valor  : Establecer umbral mínimo de voltaje de CARGA (Ej: vmin=8.1)\n", CMD_SET_VMIN_PREFIX);
     Serial.printf("  %s=valor  : Establecer umbral máximo de voltaje de CARGA (Ej: vmax=9.5)\n", CMD_SET_VMAX_PREFIX);
     Serial.printf("  %s=valor : Establecer umbral mínimo de voltaje de BOMBA (Ej: pvmin=7.6)\n", CMD_SET_PVMIN_PREFIX);
