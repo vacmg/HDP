@@ -12,7 +12,8 @@ const char* WIFI_SSID = "patxi";
 const char* WIFI_PASSWORD = "12345678"; // Hardcoded for demonstration purposes. Replace with a secure password in production.
 
 // --- Definiciones de Pines ---
-const int RELAY_VOLTAGE_PIN = 0;
+const int RELAY_VOLTAGE_PIN = 6;
+const int RELAY_CAMERA = 7
 const int RELAY_PUMP_PIN = 1;
 const int RELAY_VALVE_PIN = 2;
 const int WATER_LEVEL_PIN = 3;
@@ -496,8 +497,26 @@ public:
      const char* getName() const { return _name; }
 };
 
+
+// --- *** NUEVA INTERFAZ CONTROLLER *** ---
+/** @brief Interfaz base para todos los controladores. */
+class Controller
+{
+public:
+    /** @brief Destructor virtual para la clase base. */
+    virtual ~Controller() {}
+
+    /** @brief Activa o habilita el controlador. */
+    virtual void enable() = 0;
+
+    /** @brief Desactiva o deshabilita el controlador. */
+    virtual void disable() = 0;
+};
+// --- *** FIN NUEVA INTERFAZ *** ---
+
+
 // --- Clase VoltageController ---
-class VoltageController
+class VoltageController : public Controller // <-- MODIFICACIÓN: Hereda de Controller
 {
 public:
     enum ForcedStateOnDisable { FORCE_OFF, FORCE_ON, LEAVE_AS_IS };
@@ -554,8 +573,23 @@ public:
         _relay.begin();
     }
 
-    void enable() { if (!_isEnabled) { Serial.printf("[%s] %s HABILITADO.\n", CONTROLLER_TAG, _name); _isEnabled = true; } }
-    void disable(ForcedStateOnDisable finalState = FORCE_OFF)
+    /** @brief Habilita el control (implementa Controller). */
+    void enable() override // <-- MODIFICACIÓN: Añadido 'override'
+    { 
+        if (!_isEnabled) { 
+            Serial.printf("[%s] %s HABILITADO.\n", CONTROLLER_TAG, _name); 
+            _isEnabled = true; 
+        } 
+    }
+
+    /** @brief Deshabilita el control (implementa Controller). */
+    void disable() override // <-- NUEVO MÉTODO
+    {
+        disable(FORCE_OFF); // Llama a la versión con estado forzado por defecto
+    }
+
+    /** @brief Deshabilita el control especificando un estado final para el relé. */
+    void disable(ForcedStateOnDisable finalState) // <-- MODIFICACIÓN: Quitado valor por defecto
     {
         if (_isEnabled)
         {
@@ -608,7 +642,7 @@ public:
 };
 
 // --- Clase IrrigationController ---
-class IrrigationController
+class IrrigationController : public Controller // <-- MODIFICACIÓN: Hereda de Controller
 {
 public:
     enum IrrigationState { IDLE, PREPARE_PUMPING, PUMPING, START_VALVE_WAIT, VALVE_WAIT, STOPPING };
@@ -684,6 +718,18 @@ public:
          _pumpVoltageController.disable(VoltageController::FORCE_OFF);
          _accumulatedPumpOnTimeMs = 0;
          _lastUpdateTimeMs = millis();
+    }
+
+    /** @brief Habilita el riego (implementa Controller). */
+    void enable() override // <-- NUEVO MÉTODO
+    {
+        start();
+    }
+
+    /** @brief Deshabilita el riego (implementa Controller). */
+    void disable() override // <-- NUEVO MÉTODO
+    {
+        stop();
     }
 
     void start()
