@@ -4,7 +4,7 @@
 #include <EEPROM.h> // Incluir para persistencia
 #include <WiFi.h>   // Para WiFi
 #include <WebServer.h> // Para Servidor Web
-#include <WebSocketsServer.h> // <-- Para WebSockets
+#include <WebSocketsServer.h> // <-- WebSockets by Markus Sattler // https://github.com/Links2004/arduinoWebSockets
 #include <ArduinoJson.h>      // <-- Para JSON
 
 // --- Credenciales WiFi --- 
