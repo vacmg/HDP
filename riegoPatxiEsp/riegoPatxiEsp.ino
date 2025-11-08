@@ -920,7 +920,7 @@ public:
 
 private:
     std::list<ScheduleEntry> _scheduleList;
-    IrrigationController& _irrigationCtrl;
+    Controller& _controller; // <-- MODIFICACIÓN: Cambiado de IrrigationController& a Controller&
     uint8_t _lastMinuteChecked;
     const char* _name;
     static constexpr const char* SCHEDULER_TAG = "Scheduler";
@@ -950,15 +950,17 @@ private:
             {
                 Serial.printf("[%s] ¡Coincidencia de horario! Días=%s, Hora=%02d:%02d, Acción=%s\n",
                             SCHEDULER_TAG, daysMaskToString(entry.daysOfWeekMask).c_str(), entry.hour, entry.minute, entry.activate ? "ON" : "OFF");
-                if (entry.activate) { _irrigationCtrl.start(); } else { _irrigationCtrl.stop(); }
+                // <-- MODIFICACIÓN: Usar interfaz genérica enable()/disable()
+                if (entry.activate) { _controller.enable(); } else { _controller.disable(); }
                 actionTaken = true;
             }
         }
     }
 
 public:
-    Scheduler(IrrigationController& irrigationCtrl, const char* name = "Scheduler") :
-        _irrigationCtrl(irrigationCtrl), _lastMinuteChecked(99), _name(name)
+    // <-- MODIFICACIÓN: El constructor ahora acepta cualquier Controller
+    Scheduler(Controller& controller, const char* name = "Scheduler") :
+        _controller(controller), _lastMinuteChecked(99), _name(name)
     {}
     void begin() { Serial.printf("[%s] %s inicializado.\n", SCHEDULER_TAG, _name); }
     bool addEntry(uint8_t daysMask, uint8_t hour, uint8_t minute, bool activate, bool enabled = true)
