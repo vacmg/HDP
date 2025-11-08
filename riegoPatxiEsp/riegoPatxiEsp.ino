@@ -13,7 +13,7 @@ const char* WIFI_PASSWORD = "12345678"; // Hardcoded for demonstration purposes.
 
 // --- Definiciones de Pines ---
 const int RELAY_VOLTAGE_PIN = 6;
-const int RELAY_CAMERA = 7
+const int RELAY_CAMERA = 7;
 const int RELAY_PUMP_PIN = 1;
 const int RELAY_VALVE_PIN = 2;
 const int WATER_LEVEL_PIN = 3;
