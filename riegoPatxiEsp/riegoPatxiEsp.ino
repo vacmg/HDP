@@ -43,6 +43,9 @@ const char* CMD_CAMERA_ON = "c1"; // <-- NUEVO
 const char* CMD_CAMERA_OFF = "c0"; // <-- NUEVO
 const char* CMD_VOLTAGE_ON = "v1"; // <-- AÑADIDO
 const char* CMD_VOLTAGE_OFF = "v0"; // <-- AÑADIDO
+const char* CMD_VOLTAGE_AUTO = "va"; // <-- AÑADIDO
+const char* CMD_PUMP_AUTO = "ba"; // <-- AÑADIDO
+const char* CMD_CAMERA_AUTO = "ca"; // <-- AÑADIDO
 const char* CMD_STATUS = "s";
 const char* CMD_HELP = "h";
 const char* CMD_SET_VMIN_PREFIX = "vmin=";
@@ -610,17 +613,25 @@ public:
     /** @brief Deshabilita el control especificando un estado final para el relé. */
     void disable(ForcedStateOnDisable finalState) // <-- MODIFICACIÓN: Quitado valor por defecto
     {
-        if (_isEnabled)
+        // --- INICIO DEL BUG FIX ---
+        // El bug era que el switch(finalState) estaba DENTRO del 'if (_isEnabled)'.
+        // Esto impedía enviar comandos manuales repetidos (ej: c0, c1, c0) 
+        // porque el controlador se deshabilitaba en el primer comando.
+
+        if (_isEnabled) // Solo mostrar el mensaje de "DESHABILITADO" la primera vez
         {
-             Serial.printf("[%s] %s DESHABILITADO.\n", CONTROLLER_TAG, _name);
-            _isEnabled = false;
-            switch (finalState)
-            {
-                case FORCE_OFF: _relay.off(); break;
-                case FORCE_ON: _relay.on(); break;
-                case LEAVE_AS_IS: break;
-            }
+             Serial.printf("[%s] %s DESHABILITADO (Control Manual).\n", CONTROLLER_TAG, _name);
         }
+        _isEnabled = false; // Siempre asegurarse de que el control automático está deshabilitado
+
+        // El switch AHORA está FUERA del 'if'
+        switch (finalState)
+        {
+            case FORCE_OFF: _relay.off(); break;
+            case FORCE_ON: _relay.on(); break;
+            case LEAVE_AS_IS: break;
+        }
+        // --- FIN DEL BUG FIX ---
     }
     bool isEnabled() const { return _isEnabled; }
     void update() { if (!_isEnabled) { return; } if (millis() - _lastControlTime >= _controlInterval) { _lastControlTime = millis(); runControlLogic(); } }
@@ -1493,6 +1504,9 @@ void processGeneralCommand(String command)
     else if (command == CMD_CAMERA_OFF) { Serial.println(F("[MAIN] Desactivando relé Cámara (manual)...")); cameraVoltageController.disable(VoltageController::FORCE_OFF); } // <-- NUEVO
     else if (command == CMD_VOLTAGE_ON) { Serial.println(F("[MAIN] Activando relé Voltaje (manual)...")); mainVoltageController.disable(VoltageController::FORCE_ON); } // <-- AÑADIDO
     else if (command == CMD_VOLTAGE_OFF) { Serial.println(F("[MAIN] Desactivando relé Voltaje (manual)...")); mainVoltageController.disable(VoltageController::FORCE_OFF); } // <-- AÑADIDO
+    else if (command == CMD_CAMERA_AUTO) { Serial.println(F("[MAIN] Activando control automático Cámara...")); cameraVoltageController.enable(); } // <-- AÑADIDO
+    else if (command == CMD_PUMP_AUTO) { Serial.println(F("[MAIN] Activando control automático Bomba...")); pumpVoltageController.enable(); } // <-- AÑADIDO
+    else if (command == CMD_VOLTAGE_AUTO) { Serial.println(F("[MAIN] Activando control automático Voltaje...")); mainVoltageController.enable(); } // <-- AÑADIDO
     else { Serial.println(F("[MAIN] Comando desconocido.")); }
 }
 /** @brief Procesa comandos de sistema. */
@@ -1525,7 +1539,16 @@ void processSystemCommand(String command)
 /** @brief Despachador principal para comandos serie. */
 void processSerialCommand(String command)
 {
-    if (command.startsWith("vmin") || command.startsWith("vmax") || command.startsWith("pvmin") || command.startsWith("pvmax") || command.startsWith("maxcycles") || command.startsWith("pumptimeout") || command.startsWith("valveduration")) { processThresholdCommand(command); }
+    // --- BUG FIX ---
+    // La línea original no incluía "cvmin" ni "cvmax", por lo que esos comandos no se procesaban.
+    if (command.startsWith("vmin") || command.startsWith("vmax") || 
+        command.startsWith("pvmin") || command.startsWith("pvmax") || 
+        command.startsWith("cvmin") || command.startsWith("cvmax") || // <-- AÑADIDO "cvmin" Y "cvmax"
+        command.startsWith("maxcycles") || command.startsWith("pumptimeout") || command.startsWith("valveduration")) 
+    { 
+        processThresholdCommand(command); 
+    }
+    // --- FIN BUG FIX ---
     else if (command.startsWith("r") || command.startsWith("force") || command.startsWith("limit") || command == CMD_RESET_DAY) { processIrrigationCommand(command); }
     else if (command.startsWith("sch")) { processSchedulerCommand(command); }
     else if (command == CMD_RESET_CONFIG || command.startsWith(CMD_SET_TIME_PREFIX)) { processSystemCommand(command); }
@@ -1541,6 +1564,11 @@ void printHelp()
     Serial.printf("  %s / %s : Activar(CIERRA) / Desactivar(ABRE) Relé Válvula (Control Manual)\n", CMD_VALVE_ON, CMD_VALVE_OFF);
     Serial.printf("  %s / %s : Activar / Desactivar Relé Cámara (Control Manual - Desactiva control automático)\n", CMD_CAMERA_ON, CMD_CAMERA_OFF); // <-- NUEVO
     Serial.printf("  %s / %s : Activar / Desactivar Relé Voltaje (Control Manual - Desactiva control automático)\n", CMD_VOLTAGE_ON, CMD_VOLTAGE_OFF); // <-- AÑADIDO
+    Serial.println(F("  --- Comandos Auto (Re-habilitan control por voltaje) ---")); // <-- AÑADIDO
+    Serial.printf("  %s : Re-habilitar control automático Relé Bomba\n", CMD_PUMP_AUTO); // <-- AÑADIDO
+    Serial.printf("  %s : Re-habilitar control automático Relé Cámara\n", CMD_CAMERA_AUTO); // <-- AÑADIDO
+    Serial.printf("  %s : Re-habilitar control automático Relé Voltaje\n", CMD_VOLTAGE_AUTO); // <-- AÑADIDO
+    Serial.println(F("  --- Umbrales ---")); // <-- AÑADIDO
     Serial.printf("  %s=valor  : Establecer umbral mínimo de voltaje de CARGA (Ej: vmin=8.1)\n", CMD_SET_VMIN_PREFIX);
     Serial.printf("  %s=valor  : Establecer umbral máximo de voltaje de CARGA (Ej: vmax=9.5)\n", CMD_SET_VMAX_PREFIX);
     Serial.printf("  %s=valor : Establecer umbral mínimo de voltaje de BOMBA (Ej: pvmin=7.6)\n", CMD_SET_PVMIN_PREFIX);
