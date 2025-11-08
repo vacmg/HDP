@@ -39,12 +39,16 @@ const char* CMD_PUMP_ON = "b1";
 const char* CMD_PUMP_OFF = "b0";
 const char* CMD_VALVE_ON = "a1";
 const char* CMD_VALVE_OFF = "a0";
+const char* CMD_CAMERA_ON = "c1"; // <-- NUEVO
+const char* CMD_CAMERA_OFF = "c0"; // <-- NUEVO
 const char* CMD_STATUS = "s";
 const char* CMD_HELP = "h";
 const char* CMD_SET_VMIN_PREFIX = "vmin=";
 const char* CMD_SET_VMAX_PREFIX = "vmax=";
 const char* CMD_SET_PVMIN_PREFIX = "pvmin=";
 const char* CMD_SET_PVMAX_PREFIX = "pvmax=";
+const char* CMD_SET_CVMIN_PREFIX = "cvmin="; // <-- NUEVO
+const char* CMD_SET_CVMAX_PREFIX = "cvmax="; // <-- NUEVO
 const char* CMD_SET_MAXCYCLES_PREFIX = "maxcycles=";
 const char* CMD_SET_PUMPTIMEOUT_PREFIX = "pumptimeout=";
 const char* CMD_SET_VALVEDURATION_PREFIX = "valveduration=";
@@ -67,6 +71,8 @@ const float INITIAL_VMIN = 8.0;
 const float INITIAL_VMAX = 9.0;
 const float INITIAL_PUMP_VMIN = 7.5;
 const float INITIAL_PUMP_VMAX = 8.5;
+const float INITIAL_CAMERA_VMIN = 7.0; // <-- NUEVO
+const float INITIAL_CAMERA_VMAX = 8.0; // <-- NUEVO
 const uint8_t INITIAL_MAX_CYCLES_PER_DAY = 5;
 const bool INITIAL_DAILY_LIMIT_ENABLED = true;
 const bool INITIAL_TIMEOUT_LOCKOUT = false;
@@ -98,6 +104,8 @@ struct ConfigData {
   float vMax;
   float pumpVMin;
   float pumpVMax;
+  float cameraVMin; // <-- NUEVO
+  float cameraVMax; // <-- NUEVO
   uint8_t maxCyclesPerDay;
   unsigned long pumpTimeoutMs;
   bool dailyLimitEnabled;
@@ -179,6 +187,7 @@ const char PAGE_Root[] PROGMEM = R"rawliteral(
                 <div><span class='status-label' id='relayVoltageName'>Relé Voltaje:</span><span id='relayVoltageState' class='status-value'>--</span></div>
                 <div><span class='status-label' id='relayPumpName'>Relé Bomba:</span><span id='relayPumpState' class='status-value'>--</span></div>
                 <div><span class='status-label' id='relayValveName'>Relé Válvula:</span><span id='relayValveState' class='status-value'>--</span></div>
+                <div><span class='status-label' id='relayCameraName'>Relé Cámara:</span><span id='relayCameraState' class='status-value'>--</span></div> <!-- <-- NUEVO -->
             </div>
         </div>
 
@@ -204,6 +213,8 @@ const char PAGE_Root[] PROGMEM = R"rawliteral(
                     <div class='control-group'><label for='inpVMax'>VMax Carga:</label><input type='number' step='0.1' id='inpVMax'><button id='btnSetVMax' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpPVMin'>PVMin Bomba:</label><input type='number' step='0.1' id='inpPVMin'><button id='btnSetPVMin' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpPVMax'>PVMax Bomba:</label><input type='number' step='0.1' id='inpPVMax'><button id='btnSetPVMax' class='btn btn-secondary btn-sm'>Set</button></div>
+                    <div class='control-group'><label for='inpCVMin'>CVMin Cámara:</label><input type='number' step='0.1' id='inpCVMin'><button id='btnSetCVMin' class='btn btn-secondary btn-sm'>Set</button></div> <!-- <-- NUEVO -->
+                    <div class='control-group'><label for='inpCVMax'>CVMax Cámara:</label><input type='number' step='0.1' id='inpCVMax'><button id='btnSetCVMax' class='btn btn-secondary btn-sm'>Set</button></div> <!-- <-- NUEVO -->
                     <div class='control-group'><label for='inpMaxCycles'>Max Ciclos/Día:</label><input type='number' step='1' id='inpMaxCycles'><button id='btnSetMaxCycles' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpPumpTimeout'>Timeout Bomba(s):</label><input type='number' step='1' id='inpPumpTimeout'><button id='btnSetPumpTimeout' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpValveDuration'>Duración Válvula(s):</label><input type='number' step='1' id='inpValveDuration'><button id='btnSetValveDuration' class='btn btn-secondary btn-sm'>Set</button></div>
@@ -274,12 +285,16 @@ function updateStatus(data) {
   document.getElementById('relayPumpState').innerText = data.relayPumpState ? 'ON' : 'OFF';
   document.getElementById('relayValveName').innerText = (data.relayValveName || 'Relé Válvula') + ':';
   document.getElementById('relayValveState').innerText = data.relayValveState ? 'ON (Cierra)' : 'OFF (Abre)';
+  document.getElementById('relayCameraName').innerText = (data.relayCameraName || 'Relé Cámara') + ':'; // <-- NUEVO
+  document.getElementById('relayCameraState').innerText = data.relayCameraState ? 'ON (Corta)' : 'OFF (Permite)'; // <-- NUEVO
   document.getElementById('maxEntries').innerText = data.maxEntries !== undefined ? data.maxEntries : '??';
 
   updateInputValueIfNotFocused('inpVMin', data.vMin, 2);
   updateInputValueIfNotFocused('inpVMax', data.vMax, 2);
   updateInputValueIfNotFocused('inpPVMin', data.pumpVMin, 2);
   updateInputValueIfNotFocused('inpPVMax', data.pumpVMax, 2);
+  updateInputValueIfNotFocused('inpCVMin', data.cameraVMin, 2); // <-- NUEVO
+  updateInputValueIfNotFocused('inpCVMax', data.cameraVMax, 2); // <-- NUEVO
   updateInputValueIfNotFocused('inpMaxCycles', data.maxCycles);
   updateInputValueIfNotFocused('inpPumpTimeout', data.pumpTimeoutS);
   updateInputValueIfNotFocused('inpValveDuration', data.valveDurationS);
@@ -328,6 +343,8 @@ document.getElementById('btnSetVMin').addEventListener('click', () => { const va
 document.getElementById('btnSetVMax').addEventListener('click', () => { const val = document.getElementById('inpVMax').value; if(val !== '') sendWsCommand('set_vmax', parseFloat(val)); });
 document.getElementById('btnSetPVMin').addEventListener('click', () => { const val = document.getElementById('inpPVMin').value; if(val !== '') sendWsCommand('set_pvmin', parseFloat(val)); });
 document.getElementById('btnSetPVMax').addEventListener('click', () => { const val = document.getElementById('inpPVMax').value; if(val !== '') sendWsCommand('set_pvmax', parseFloat(val)); });
+document.getElementById('btnSetCVMin').addEventListener('click', () => { const val = document.getElementById('inpCVMin').value; if(val !== '') sendWsCommand('set_cvmin', parseFloat(val)); }); // <-- NUEVO
+document.getElementById('btnSetCVMax').addEventListener('click', () => { const val = document.getElementById('inpCVMax').value; if(val !== '') sendWsCommand('set_cvmax', parseFloat(val)); }); // <-- NUEVO
 document.getElementById('btnSetMaxCycles').addEventListener('click', () => { const val = document.getElementById('inpMaxCycles').value; if(val !== '') sendWsCommand('set_maxcycles', parseInt(val)); });
 document.getElementById('btnSetPumpTimeout').addEventListener('click', () => { const val = document.getElementById('inpPumpTimeout').value; if(val !== '') sendWsCommand('set_pumptimeout', parseInt(val)); });
 document.getElementById('btnSetValveDuration').addEventListener('click', () => { const val = document.getElementById('inpValveDuration').value; if(val !== '') sendWsCommand('set_valveduration', parseInt(val)); });
@@ -1027,6 +1044,7 @@ WaterLevelSensor waterSensor(WATER_LEVEL_PIN, true);
 VoltageSensor voltageSensor(VOLTAGE_SENSOR_PIN, VOLTAGE_SENSOR_SCALE_FACTOR, "Voltaje");
 VoltageController mainVoltageController(voltageSensor, RELAY_VOLTAGE_PIN, "Voltaje", true, INITIAL_VMIN, INITIAL_VMAX, VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Carga");
 VoltageController pumpVoltageController(voltageSensor, RELAY_PUMP_PIN, "Bomba", true, INITIAL_PUMP_VMIN, INITIAL_PUMP_VMAX, PUMP_VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Bomba");
+VoltageController cameraVoltageController(voltageSensor, RELAY_CAMERA, "Camara", true, INITIAL_CAMERA_VMIN, INITIAL_CAMERA_VMAX, VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Camara"); // <-- NUEVO
 IrrigationController irrigationController(relayValve, waterSensor, pumpVoltageController, INITIAL_MAX_CYCLES_PER_DAY, INITIAL_PUMP_TIMEOUT_S, INITIAL_DAILY_LIMIT_ENABLED, INITIAL_TIMEOUT_LOCKOUT);
 Scheduler scheduler(irrigationController);
 WebServer server(80);
@@ -1066,6 +1084,8 @@ void saveConfiguration() {
     configToSave.vMax = mainVoltageController.getVMax();
     configToSave.pumpVMin = pumpVoltageController.getVMin();
     configToSave.pumpVMax = pumpVoltageController.getVMax();
+    configToSave.cameraVMin = cameraVoltageController.getVMin(); // <-- NUEVO
+    configToSave.cameraVMax = cameraVoltageController.getVMax(); // <-- NUEVO
     configToSave.maxCyclesPerDay = irrigationController.getMaxCyclesPerDay();
     configToSave.pumpTimeoutMs = irrigationController.getPumpTimeoutSeconds() * 1000UL;
     configToSave.valveOpenDurationMs = irrigationController.getValveOpenDurationSeconds() * 1000UL;
@@ -1099,6 +1119,7 @@ bool loadConfiguration() {
          scheduler.clearSchedule();
          mainVoltageController.setVMin(INITIAL_VMIN); mainVoltageController.setVMax(INITIAL_VMAX);
          pumpVoltageController.setVMin(INITIAL_PUMP_VMIN); pumpVoltageController.setVMax(INITIAL_PUMP_VMAX);
+         cameraVoltageController.setVMin(INITIAL_CAMERA_VMIN); cameraVoltageController.setVMax(INITIAL_CAMERA_VMAX); // <-- NUEVO
          irrigationController.setMaxCyclesPerDay(INITIAL_MAX_CYCLES_PER_DAY);
          irrigationController.setPumpTimeout(INITIAL_PUMP_TIMEOUT_S);
          irrigationController.setValveOpenDuration(INITIAL_VALVE_OPEN_DURATION_S);
@@ -1113,6 +1134,8 @@ bool loadConfiguration() {
          mainVoltageController.setVMax(loadedConfig.vMax);
          pumpVoltageController.setVMin(loadedConfig.pumpVMin);
          pumpVoltageController.setVMax(loadedConfig.pumpVMax);
+         cameraVoltageController.setVMin(loadedConfig.cameraVMin); // <-- NUEVO
+         cameraVoltageController.setVMax(loadedConfig.cameraVMax); // <-- NUEVO
          irrigationController.setMaxCyclesPerDay(loadedConfig.maxCyclesPerDay);
          irrigationController.setPumpTimeout(loadedConfig.pumpTimeoutMs / 1000UL);
          irrigationController.setValveOpenDuration(loadedConfig.valveOpenDurationMs / 1000UL);
@@ -1205,6 +1228,8 @@ void processWebSocketCommand(uint8_t num, const char* commandJson) {
     else if (commandStr == "set_vmax") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = mainVoltageController.setVMax(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_vmax")); } }
     else if (commandStr == "set_pvmin") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = pumpVoltageController.setVMin(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_pvmin")); } }
     else if (commandStr == "set_pvmax") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = pumpVoltageController.setVMax(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_pvmax")); } }
+    else if (commandStr == "set_cvmin") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = cameraVoltageController.setVMin(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_cvmin")); } } // <-- NUEVO
+    else if (commandStr == "set_cvmax") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = cameraVoltageController.setVMax(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_cvmax")); } } // <-- NUEVO
     else if (commandStr == "set_maxcycles") { if (doc.containsKey("value") && doc["value"].is<unsigned int>()) { configChanged = irrigationController.setMaxCyclesPerDay(doc["value"].as<unsigned int>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_maxcycles")); } }
     else if (commandStr == "set_pumptimeout") { if (doc.containsKey("value") && doc["value"].is<unsigned long>()) { configChanged = irrigationController.setPumpTimeout(doc["value"].as<unsigned long>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_pumptimeout")); } }
     else if (commandStr == "set_valveduration") { if (doc.containsKey("value") && doc["value"].is<unsigned long>()) { configChanged = irrigationController.setValveOpenDuration(doc["value"].as<unsigned long>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_valveduration")); } }
@@ -1257,10 +1282,14 @@ void sendStatusUpdate() {
     jsonDoc["relayPumpState"] = pumpVoltageController.isControlledRelayOn();
     jsonDoc["relayValveName"] = relayValve.getName();
     jsonDoc["relayValveState"] = relayValve.isOn();
+    jsonDoc["relayCameraName"] = cameraVoltageController.getControlledRelayName(); // <-- NUEVO
+    jsonDoc["relayCameraState"] = cameraVoltageController.isControlledRelayOn(); // <-- NUEVO
     jsonDoc["vMin"] = mainVoltageController.getVMin();
     jsonDoc["vMax"] = mainVoltageController.getVMax();
     jsonDoc["pumpVMin"] = pumpVoltageController.getVMin();
     jsonDoc["pumpVMax"] = pumpVoltageController.getVMax();
+    jsonDoc["cameraVMin"] = cameraVoltageController.getVMin(); // <-- NUEVO
+    jsonDoc["cameraVMax"] = cameraVoltageController.getVMax(); // <-- NUEVO
     jsonDoc["maxEntries"] = Scheduler::MAX_ENTRIES;
 
     JsonArray scheduleArray = jsonDoc.createNestedArray("schedule");
@@ -1312,6 +1341,7 @@ void setup()
     voltageSensor.begin();
     mainVoltageController.begin();
     pumpVoltageController.begin();
+    cameraVoltageController.begin(); // <-- NUEVO
 
     Serial.printf("[MAIN] Inicializando I2C en pines SDA=%d, SCL=%d\n", RTC_SDA_PIN, RTC_SCL_PIN);
     if (!Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN)) { Serial.println(F("[MAIN] ¡Error al inicializar I2C! Deteniendo.")); while(1) { controlVoltageAndRestartAfterVMinReached(); } }
@@ -1345,6 +1375,7 @@ void setup()
     Serial.println(F("---[MAIN] Setup Completo ---"));
     Serial.printf("[MAIN] Umbrales Carga: vMin=%.2f V, vMax=%.2f V\n", mainVoltageController.getVMin(), mainVoltageController.getVMax());
     Serial.printf("[MAIN] Umbrales Bomba: pvMin=%.2f V, pvMax=%.2f V\n", pumpVoltageController.getVMin(), pumpVoltageController.getVMax());
+    Serial.printf("[MAIN] Umbrales Camara: cvMin=%.2f V, cvMax=%.2f V\n", cameraVoltageController.getVMin(), cameraVoltageController.getVMax()); // <-- NUEVO
     Serial.printf("[MAIN] Límite Riegos/Día: %d (%s)\n",
                   irrigationController.getMaxCyclesPerDay(),
                   irrigationController.isDailyLimitEnabled() ? "Habilitado" : "Deshabilitado");
@@ -1386,6 +1417,7 @@ void loop()
     DateTime now = rtc.now();
 
     mainVoltageController.update();
+    cameraVoltageController.update(); // <-- NUEVO
     irrigationController.update();
     scheduler.update(now);
 
@@ -1412,9 +1444,11 @@ void processThresholdCommand(String command)
      if (command.startsWith(CMD_SET_VMIN_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VMIN_PREFIX)); if (isValidFloat(valueStr)) { configChanged = mainVoltageController.setVMin(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VMIN_PREFIX, valueStr.c_str()); } }
      else if (command.startsWith(CMD_SET_VMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = mainVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VMAX_PREFIX, valueStr.c_str()); } }
      else if (command.startsWith(CMD_SET_PVMIN_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PVMIN_PREFIX)); if (isValidFloat(valueStr)) { configChanged = pumpVoltageController.setVMin(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PVMIN_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_PVMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PVMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = pumpVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PVMAX_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_MAXCYCLES_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_MAXCYCLES_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setMaxCyclesPerDay((uint8_t)valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_MAXCYCLES_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_PUMPTIMEOUT_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PUMPTIMEOUT_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setPumpTimeout(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PUMPTIMEOUT_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_PVMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PVMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = pumpVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PVMAX_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_CVMIN_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_CVMIN_PREFIX)); if (isValidFloat(valueStr)) { configChanged = cameraVoltageController.setVMin(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_CVMIN_PREFIX, valueStr.c_str()); } } // <-- NUEVO
+    else if (command.startsWith(CMD_SET_CVMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_CVMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = cameraVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_CVMAX_PREFIX, valueStr.c_str()); } } // <-- NUEVO
+    else if (command.startsWith(CMD_SET_MAXCYCLES_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_MAXCYCLES_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setMaxCyclesPerDay((uint8_t)valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_MAXCYCLES_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_PUMPTIMEOUT_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PUMPTIMEOUT_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setPumpTimeout(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PUMPTIMEOUT_PREFIX, valueStr.c_str()); } }
      else if (command.startsWith(CMD_SET_VALVEDURATION_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VALVEDURATION_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setValveOpenDuration(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VALVEDURATION_PREFIX, valueStr.c_str()); } }
      else { Serial.println(F("[MAIN] Comando desconocido (processThresholdCommand).")); }
      if (configChanged) { saveConfiguration(); }
@@ -1453,6 +1487,8 @@ void processGeneralCommand(String command)
     else if (command == CMD_HELP) { Serial.println(F("[MAIN] Mostrando ayuda...")); printHelp(); }
     else if (command == CMD_PUMP_ON) { Serial.println(F("[MAIN] Activando relé Bomba (manual)...")); pumpVoltageController.disable(VoltageController::FORCE_ON); }
     else if (command == CMD_PUMP_OFF) { Serial.println(F("[MAIN] Desactivando relé Bomba (manual)...")); pumpVoltageController.disable(VoltageController::FORCE_OFF); }
+    else if (command == CMD_CAMERA_ON) { Serial.println(F("[MAIN] Activando relé Cámara (manual)...")); cameraVoltageController.disable(VoltageController::FORCE_ON); } // <-- NUEVO
+    else if (command == CMD_CAMERA_OFF) { Serial.println(F("[MAIN] Desactivando relé Cámara (manual)...")); cameraVoltageController.disable(VoltageController::FORCE_OFF); } // <-- NUEVO
     else { Serial.println(F("[MAIN] Comando desconocido.")); }
 }
 /** @brief Procesa comandos de sistema. */
@@ -1499,10 +1535,13 @@ void printHelp()
     Serial.println(F("\n---[HELP] Lista de Comandos Disponibles ---"));
     Serial.printf("  %s / %s : Activar / Desactivar Relé Bomba (Control Manual - Desactiva control automático)\n", CMD_PUMP_ON, CMD_PUMP_OFF);
     Serial.printf("  %s / %s : Activar(CIERRA) / Desactivar(ABRE) Relé Válvula (Control Manual)\n", CMD_VALVE_ON, CMD_VALVE_OFF);
+    Serial.printf("  %s / %s : Activar / Desactivar Relé Cámara (Control Manual - Desactiva control automático)\n", CMD_CAMERA_ON, CMD_CAMERA_OFF); // <-- NUEVO
     Serial.printf("  %s=valor  : Establecer umbral mínimo de voltaje de CARGA (Ej: vmin=8.1)\n", CMD_SET_VMIN_PREFIX);
     Serial.printf("  %s=valor  : Establecer umbral máximo de voltaje de CARGA (Ej: vmax=9.5)\n", CMD_SET_VMAX_PREFIX);
     Serial.printf("  %s=valor : Establecer umbral mínimo de voltaje de BOMBA (Ej: pvmin=7.6)\n", CMD_SET_PVMIN_PREFIX);
     Serial.printf("  %s=valor : Establecer umbral máximo de voltaje de BOMBA (Ej: pvmax=8.8)\n", CMD_SET_PVMAX_PREFIX);
+    Serial.printf("  %s=valor : Establecer umbral mínimo de voltaje de CAMARA (Ej: cvmin=7.0)\n", CMD_SET_CVMIN_PREFIX); // <-- NUEVO
+    Serial.printf("  %s=valor : Establecer umbral máximo de voltaje de CAMARA (Ej: cvmax=8.0)\n", CMD_SET_CVMAX_PREFIX); // <-- NUEVO
     Serial.printf("  %s=N      : Establecer LÍMITE de ciclos de riego por día (Ej: maxcycles=5)\n", CMD_SET_MAXCYCLES_PREFIX);
     Serial.printf("  %s=SEG   : Establecer TIMEOUT de seguridad para bomba (segundos). Ej: pumptimeout=60\n", CMD_SET_PUMPTIMEOUT_PREFIX);
     Serial.printf("  %s=SEG   : Establecer DURACIÓN apertura válvula (segundos). Ej: valveduration=10\n", CMD_SET_VALVEDURATION_PREFIX);
@@ -1553,6 +1592,7 @@ void printCurrentStatus(DateTime now)
     Serial.printf("[STATUS] %s: %.2f V\n", voltageSensor.getName(), currentVoltage);
     Serial.printf("[STATUS] Umbrales Carga: vMin=%.2f V, vMax=%.2f V\n", mainVoltageController.getVMin(), mainVoltageController.getVMax());
     Serial.printf("[STATUS] Umbrales Bomba: pvMin=%.2f V, pvMax=%.2f V\n", pumpVoltageController.getVMin(), pumpVoltageController.getVMax());
+    Serial.printf("[STATUS] Umbrales Camara: cvMin=%.2f V, cvMax=%.2f V\n", cameraVoltageController.getVMin(), cameraVoltageController.getVMax()); // <-- NUEVO
 
     Serial.printf("[STATUS] %s: %s (Estado: %s)\n",
                   irrigationController.getName(),
@@ -1573,6 +1613,7 @@ void printCurrentStatus(DateTime now)
     Serial.println(F("---[STATUS] Estado Lógico Relés ---"));
     Serial.printf("[STATUS] %s: %s\n", mainVoltageController.getControlledRelayName(), mainVoltageController.isControlledRelayOn() ? "ON (Corriente Cortada)" : "OFF (Corriente Permitiendo)");
     Serial.printf("[STATUS] %s: %s\n", pumpVoltageController.getControlledRelayName(), pumpVoltageController.isControlledRelayOn() ? "ON" : "OFF");
+    Serial.printf("[STATUS] %s: %s\n", cameraVoltageController.getControlledRelayName(), cameraVoltageController.isControlledRelayOn() ? "ON (Corriente Cortada)" : "OFF (Corriente Permitiendo)"); // <-- NUEVO
     Serial.printf("[STATUS] %s: %s\n", relayValve.getName(), relayValve.isOn() ? "ON (Válvula Cerrada)" : "OFF (Válvula Abierta)");
     Serial.println(F("------------------------"));
 }
