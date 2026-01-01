@@ -1218,7 +1218,7 @@ WaterLevelSensor waterSensor(WATER_LEVEL_PIN, true);
 VoltageSensor voltageSensor(VOLTAGE_SENSOR_PIN, VOLTAGE_SENSOR_SCALE_FACTOR, "Voltaje");
 VoltageController mainVoltageController(voltageSensor, RELAY_VOLTAGE_PIN, "Voltaje", true, INITIAL_VMIN, INITIAL_VMAX, VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Carga");
 VoltageController pumpVoltageController(voltageSensor, RELAY_PUMP_PIN, "Bomba", true, INITIAL_PUMP_VMIN, INITIAL_PUMP_VMAX, PUMP_VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Bomba");
-VoltageController cameraVoltageController(voltageSensor, RELAY_CAMERA, "Camara", true, INITIAL_CAMERA_VMIN, INITIAL_CAMERA_VMAX, VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Camara"); 
+VoltageController cameraVoltageController(voltageSensor, RELAY_CAMERA, "Camara", false, INITIAL_CAMERA_VMIN, INITIAL_CAMERA_VMAX, VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Camara"); 
 IrrigationController irrigationController(relayValve, waterSensor, pumpVoltageController, INITIAL_MAX_CYCLES_PER_DAY, INITIAL_PUMP_TIMEOUT_S, INITIAL_DAILY_LIMIT_ENABLED, INITIAL_TIMEOUT_LOCKOUT);
 Scheduler schedulerIrrigation(irrigationController, "SchedulerRiego");
 // --- PASO 2: Crear el nuevo objeto Scheduler para la Cámara ---
