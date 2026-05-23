@@ -798,9 +798,9 @@ public:
     bool isEnabled() const { return _isEnabled; }
     void update() { if (!_isEnabled) { return; } if (millis() - _lastControlTime >= _controlInterval) { _lastControlTime = millis(); runControlLogic(); } }
 
-    bool setVMin(float newVMin)
+    bool setVMin(float newVMin, bool skipChecks = false)
     {
-        if (newVMin > 0 && newVMin < _maxThreshold)
+        if ((skipChecks && newVMin > 0) || (!skipChecks && newVMin > 0 && newVMin < _maxThreshold))
         {
             if (_minThreshold != newVMin)
             {
@@ -810,11 +810,15 @@ public:
             }
             return false;
         }
-        else { Serial.printf("[%s] %s: Error: Valor inválido para vMin (%.2f). Debe ser > 0 y < vMax (%.2f).\n", CONTROLLER_TAG, _name, newVMin, _maxThreshold); return false; }
+        else {
+            if (skipChecks) { Serial.printf("[%s] %s: Error: Valor inválido para vMin (%.2f). Debe ser > 0.\n", CONTROLLER_TAG, _name, newVMin); }
+            else { Serial.printf("[%s] %s: Error: Valor inválido para vMin (%.2f). Debe ser > 0 y < vMax (%.2f).\n", CONTROLLER_TAG, _name, newVMin, _maxThreshold); }
+            return false;
+        }
     }
-    bool setVMax(float newVMax)
+    bool setVMax(float newVMax, bool skipChecks = false)
     {
-        if (newVMax > 0 && newVMax > _minThreshold)
+        if ((skipChecks && newVMax > 0) || (!skipChecks && newVMax > 0 && newVMax > _minThreshold))
         {
             if (_maxThreshold != newVMax)
             {
@@ -824,7 +828,11 @@ public:
             }
             return false;
         }
-        else { Serial.printf("[%s] %s: Error: Valor inválido para vMax (%.2f). Debe ser > 0 y > vMin (%.2f).\n", CONTROLLER_TAG, _name, newVMax, _minThreshold); return false; }
+        else {
+            if (skipChecks) { Serial.printf("[%s] %s: Error: Valor inválido para vMax (%.2f). Debe ser > 0.\n", CONTROLLER_TAG, _name, newVMax); }
+            else { Serial.printf("[%s] %s: Error: Valor inválido para vMax (%.2f). Debe ser > 0 y > vMin (%.2f).\n", CONTROLLER_TAG, _name, newVMax, _minThreshold); }
+            return false;
+        }
     }
     float getVMin() const { return _minThreshold; }
     float getVMax() const { return _maxThreshold; }
@@ -1324,12 +1332,12 @@ bool loadConfiguration() {
         return false;
     } else {
         Serial.println(F("[CONFIG] Configuración válida encontrada. Aplicando..."));
-        mainVoltageController.setVMin(loadedConfig.vMin);
-        mainVoltageController.setVMax(loadedConfig.vMax);
-        pumpVoltageController.setVMin(loadedConfig.pumpVMin);
-        pumpVoltageController.setVMax(loadedConfig.pumpVMax);
-        cameraVoltageController.setVMin(loadedConfig.cameraVMin);
-        cameraVoltageController.setVMax(loadedConfig.cameraVMax);
+        mainVoltageController.setVMin(loadedConfig.vMin, true);
+        mainVoltageController.setVMax(loadedConfig.vMax, true);
+        pumpVoltageController.setVMin(loadedConfig.pumpVMin, true);
+        pumpVoltageController.setVMax(loadedConfig.pumpVMax, true);
+        cameraVoltageController.setVMin(loadedConfig.cameraVMin, true);
+        cameraVoltageController.setVMax(loadedConfig.cameraVMax, true);
         irrigationController.setMaxCyclesPerDay(loadedConfig.maxCyclesPerDay);
         irrigationController.setPumpTimeout(loadedConfig.pumpTimeoutMs / 1000UL);
         irrigationController.setValveOpenDuration(loadedConfig.valveOpenDurationMs / 1000UL);
