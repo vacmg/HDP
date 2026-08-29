@@ -4,7 +4,7 @@
 #include <EEPROM.h> // Incluir para persistencia
 #include <WiFi.h>   // Para WiFi
 #include <WebServer.h> // Para Servidor Web
-#include <WebSocketsServer.h> // <-- Para WebSockets
+#include <WebSocketsServer.h> // <-- WebSockets by Markus Sattler // https://github.com/Links2004/arduinoWebSockets
 #include <ArduinoJson.h>      // <-- Para JSON
 
 // --- Credenciales WiFi --- 
@@ -12,16 +12,17 @@ const char* WIFI_SSID = "patxi";
 const char* WIFI_PASSWORD = "12345678"; // Hardcoded for demonstration purposes. Replace with a secure password in production.
 
 // --- Definiciones de Pines ---
-const int RELAY_VOLTAGE_PIN = 0;
-const int RELAY_PUMP_PIN = 1;
-const int RELAY_VALVE_PIN = 2;
+const int RELAY_VOLTAGE_PIN = 6;
+const int RELAY_CAMERA = 7;
+const int RELAY_PUMP_PIN = 2;
+const int RELAY_VALVE_PIN = 1;
 const int WATER_LEVEL_PIN = 3;
 const int VOLTAGE_SENSOR_PIN = 4;
 const int RTC_SDA_PIN = 8;
 const int RTC_SCL_PIN = 9;
 
 // --- Constantes ---
-const float VOLTAGE_SENSOR_SCALE_FACTOR = 4.39;
+const float VOLTAGE_SENSOR_SCALE_FACTOR = 5.70;
 const long SERIAL_BAUD_RATE = 115200;
 const unsigned long STATUS_PRINT_INTERVAL_MS = 5000;
 const unsigned long VOLTAGE_CONTROL_INTERVAL_MS = 500;
@@ -38,12 +39,21 @@ const char* CMD_PUMP_ON = "b1";
 const char* CMD_PUMP_OFF = "b0";
 const char* CMD_VALVE_ON = "a1";
 const char* CMD_VALVE_OFF = "a0";
+const char* CMD_CAMERA_ON = "c1";
+const char* CMD_CAMERA_OFF = "c0";
+const char* CMD_VOLTAGE_ON = "v1";
+const char* CMD_VOLTAGE_OFF = "v0";
+const char* CMD_VOLTAGE_AUTO = "va";
+const char* CMD_PUMP_AUTO = "ba";
+const char* CMD_CAMERA_AUTO = "ca";
 const char* CMD_STATUS = "s";
 const char* CMD_HELP = "h";
 const char* CMD_SET_VMIN_PREFIX = "vmin=";
 const char* CMD_SET_VMAX_PREFIX = "vmax=";
 const char* CMD_SET_PVMIN_PREFIX = "pvmin=";
 const char* CMD_SET_PVMAX_PREFIX = "pvmax=";
+const char* CMD_SET_CVMIN_PREFIX = "cvmin=";
+const char* CMD_SET_CVMAX_PREFIX = "cvmax=";
 const char* CMD_SET_MAXCYCLES_PREFIX = "maxcycles=";
 const char* CMD_SET_PUMPTIMEOUT_PREFIX = "pumptimeout=";
 const char* CMD_SET_VALVEDURATION_PREFIX = "valveduration=";
@@ -53,19 +63,29 @@ const char* CMD_FORCE_CYCLE = "forcecycle";
 const char* CMD_LIMIT_ON = "limit_on";
 const char* CMD_LIMIT_OFF = "limit_off";
 const char* CMD_RESET_DAY = "resetday";
-const char* CMD_SCH_ADD_PREFIX = "schadd=";
-const char* CMD_SCH_LIST = "schlist";
-const char* CMD_SCH_DEL_PREFIX = "schdel=";
-const char* CMD_SCH_ENABLE_PREFIX = "schen=";
-const char* CMD_SCH_DISABLE_PREFIX = "schdis=";
+// --- Comandos de Scheduler Riego (_r) ---
+const char* CMD_SCH_R_ADD_PREFIX = "schadd_r=";
+const char* CMD_SCH_R_LIST = "schlist_r";
+const char* CMD_SCH_R_DEL_PREFIX = "schdel_r=";
+const char* CMD_SCH_R_ENABLE_PREFIX = "schen_r=";
+const char* CMD_SCH_R_DISABLE_PREFIX = "schdis_r=";
+// --- PASO 2: Comandos de Scheduler Cámara (_c) ---
+const char* CMD_SCH_C_ADD_PREFIX = "schadd_c=";
+const char* CMD_SCH_C_LIST = "schlist_c";
+const char* CMD_SCH_C_DEL_PREFIX = "schdel_c=";
+const char* CMD_SCH_C_ENABLE_PREFIX = "schen_c=";
+const char* CMD_SCH_C_DISABLE_PREFIX = "schdis_c=";
+// --- FIN PASO 2 ---
 const char* CMD_RESET_CONFIG = "resetconfig";
 const char* CMD_SET_TIME_PREFIX = "settime=";
 
 // --- Valores Iniciales / Por Defecto ---
-const float INITIAL_VMIN = 8.0;
-const float INITIAL_VMAX = 9.0;
-const float INITIAL_PUMP_VMIN = 7.5;
-const float INITIAL_PUMP_VMAX = 8.5;
+const float INITIAL_VMIN = 11;
+const float INITIAL_VMAX = 14;
+const float INITIAL_PUMP_VMIN = 10;
+const float INITIAL_PUMP_VMAX = 13;
+const float INITIAL_CAMERA_VMIN = 7.0;
+const float INITIAL_CAMERA_VMAX = 8.0;
 const uint8_t INITIAL_MAX_CYCLES_PER_DAY = 5;
 const bool INITIAL_DAILY_LIMIT_ENABLED = true;
 const bool INITIAL_TIMEOUT_LOCKOUT = false;
@@ -74,8 +94,10 @@ const unsigned long INITIAL_VALVE_OPEN_DURATION_S = 10;
 // --- Configuración EEPROM ---
 const int EEPROM_ADDR = 0;
 const uint32_t CONFIG_MAGIC_NUMBER = 0xDEA0BEEF;
-const uint16_t CONFIG_VERSION = 1;
-const uint8_t MAX_SCHEDULE_ENTRIES_EEPROM = 20;
+// --- PASO 2: Incrementar versión para forzar reset de EEPROM ---
+const uint16_t CONFIG_VERSION = 2; // Incrementado de 1 a 2
+// --- FIN PASO 2 ---
+const uint8_t MAX_SCHEDULE_ENTRIES_PER_SCHEDULER = 10; // 10 para Riego, 10 para Cámara
 
 // --- Estructura para Horarios ---
 /** @brief Define una entrada de programación horaria. */
@@ -91,21 +113,28 @@ struct ScheduleEntry
 // --- Estructura para Datos en EEPROM ---
 /** @brief Estructura que agrupa toda la configuración persistente. */
 struct ConfigData {
-  uint32_t magicNumber;
-  uint16_t version;
-  float vMin;
-  float vMax;
-  float pumpVMin;
-  float pumpVMax;
-  uint8_t maxCyclesPerDay;
-  unsigned long pumpTimeoutMs;
-  bool dailyLimitEnabled;
-  bool timeoutLockoutActive;
-  unsigned long valveOpenDurationMs;
-  uint8_t scheduleCount;
-  uint8_t dayOfMonth;
-  uint8_t cyclesToday;
-  ScheduleEntry schedule[MAX_SCHEDULE_ENTRIES_EEPROM];
+    uint32_t magicNumber;
+    uint16_t version;
+    float vMin;
+    float vMax;
+    float pumpVMin;
+    float pumpVMax;
+    float cameraVMin;
+    float cameraVMax;
+    uint8_t maxCyclesPerDay;
+    unsigned long pumpTimeoutMs;
+    bool dailyLimitEnabled;
+    bool timeoutLockoutActive;
+    unsigned long valveOpenDurationMs;
+    uint8_t dayOfMonth;
+    uint8_t cyclesToday;
+
+    // --- Estructura de EEPROM para 2 schedulers ---
+    uint8_t scheduleCountIrrigation;
+    ScheduleEntry scheduleIrrigation[MAX_SCHEDULE_ENTRIES_PER_SCHEDULER];
+    uint8_t scheduleCountCamera;
+    ScheduleEntry scheduleCamera[MAX_SCHEDULE_ENTRIES_PER_SCHEDULER];
+    // --- FIN ---
 };
 
 const int EEPROM_SIZE = sizeof(ConfigData);
@@ -140,9 +169,11 @@ const char PAGE_Root[] PROGMEM = R"rawliteral(
         .btn-danger { background-color: #ef4444; color: white; }
         .btn:hover { filter: brightness(90%); }
         .flex-wrap { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-        #scheduleList div { border-bottom: 1px solid #eee; padding: 0.5rem 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;}
-        #scheduleList div:last-child { border-bottom: none; }
-        #scheduleList span { flex-grow: 1; margin-right: 1rem; }
+        /* --- PASO 2: Añadida CSS para la lista de Cámara --- */
+        #irr_scheduleList div, #cam_scheduleList div { border-bottom: 1px solid #eee; padding: 0.5rem 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;}
+        #irr_scheduleList div:last-child, #cam_scheduleList div:last-child { border-bottom: none; }
+        #irr_scheduleList span, #cam_scheduleList span { flex-grow: 1; margin-right: 1rem; }
+        /* --- FIN PASO 2 --- */
         @media (max-width: 768px) { .grid-cols-2 { grid-template-columns: repeat(1, minmax(0, 1fr)); } .control-group label { width: auto; } }
     </style>
 </head>
@@ -178,6 +209,7 @@ const char PAGE_Root[] PROGMEM = R"rawliteral(
                 <div><span class='status-label' id='relayVoltageName'>Relé Voltaje:</span><span id='relayVoltageState' class='status-value'>--</span></div>
                 <div><span class='status-label' id='relayPumpName'>Relé Bomba:</span><span id='relayPumpState' class='status-value'>--</span></div>
                 <div><span class='status-label' id='relayValveName'>Relé Válvula:</span><span id='relayValveState' class='status-value'>--</span></div>
+                <div><span class='status-label' id='relayCameraName'>Relé Cámara:</span><span id='relayCameraState' class='status-value'>--</span></div>
             </div>
         </div>
 
@@ -203,6 +235,8 @@ const char PAGE_Root[] PROGMEM = R"rawliteral(
                     <div class='control-group'><label for='inpVMax'>VMax Carga:</label><input type='number' step='0.1' id='inpVMax'><button id='btnSetVMax' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpPVMin'>PVMin Bomba:</label><input type='number' step='0.1' id='inpPVMin'><button id='btnSetPVMin' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpPVMax'>PVMax Bomba:</label><input type='number' step='0.1' id='inpPVMax'><button id='btnSetPVMax' class='btn btn-secondary btn-sm'>Set</button></div>
+                    <div class='control-group'><label for='inpCVMin'>CVMin Cámara:</label><input type='number' step='0.1' id='inpCVMin'><button id='btnSetCVMin' class='btn btn-secondary btn-sm'>Set</button></div>
+                    <div class='control-group'><label for='inpCVMax'>CVMax Cámara:</label><input type='number' step='0.1' id='inpCVMax'><button id='btnSetCVMax' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpMaxCycles'>Max Ciclos/Día:</label><input type='number' step='1' id='inpMaxCycles'><button id='btnSetMaxCycles' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpPumpTimeout'>Timeout Bomba(s):</label><input type='number' step='1' id='inpPumpTimeout'><button id='btnSetPumpTimeout' class='btn btn-secondary btn-sm'>Set</button></div>
                     <div class='control-group'><label for='inpValveDuration'>Duración Válvula(s):</label><input type='number' step='1' id='inpValveDuration'><button id='btnSetValveDuration' class='btn btn-secondary btn-sm'>Set</button></div>
@@ -220,21 +254,42 @@ const char PAGE_Root[] PROGMEM = R"rawliteral(
             </div>
         </div>
 
-    </div> <div class='section'>
-        <h2>Planificador (Máx: <span id='maxEntries'></span>)</h2>
-        <div id='scheduleList' class='mb-4'>Cargando horarios...</div>
-        <h3>Añadir / Modificar Horario</h3>
+    </div>
+
+    <!-- --- Sección Planificador Riego (IDs con prefijo irr_) --- -->
+    <div class='section'>
+        <h2>Planificador Riego (Máx: <span id='irr_maxEntries'></span>)</h2>
+        <div id='irr_scheduleList' class='mb-4'>Cargando horarios...</div>
+        <h3>Añadir / Modificar Horario (Riego)</h3>
         <div class='flex flex-wrap items-center gap-2'>
-             <input type='hidden' id='schEditIndex' value='-1'>
-             <div class='control-group'><label for='schDays'>Días (LMXJVSD*):</label><input type='text' id='schDays' size='7'></div>
-             <div class='control-group'><label for='schHour'>Hora (0-23):</label><input type='number' id='schHour' min='0' max='23'></div>
-             <div class='control-group'><label for='schMinute'>Min (0-59):</label><input type='number' id='schMinute' min='0' max='59'></div>
-             <div class='control-group'><label for='schAction'>Acción:</label><select id='schAction'><option value='1'>ON</option><option value='0'>OFF</option></select></div>
-             <div class='control-group'><label for='schEnabled'>Estado:</label><select id='schEnabled'><option value='1'>Habilitado</option><option value='0'>Deshabilitado</option></select></div>
-             <button id='schSaveBtn' class='btn btn-primary'>Guardar</button>
-             <button id='schCancelBtn' style='display:none;' class='btn btn-secondary'>Cancelar Edición</button>
+             <input type='hidden' id='irr_schEditIndex' value='-1'>
+             <div class='control-group'><label for='irr_schDays'>Días (LMXJVSD*):</label><input type='text' id='irr_schDays' size='7'></div>
+             <div class='control-group'><label for='irr_schHour'>Hora (0-23):</label><input type='number' id='irr_schHour' min='0' max='23'></div>
+             <div class='control-group'><label for='irr_schMinute'>Min (0-59):</label><input type='number' id='irr_schMinute' min='0' max='59'></div>
+             <div class='control-group'><label for='irr_schAction'>Acción:</label><select id='irr_schAction'><option value='1'>ON</option><option value='0'>OFF</option></select></div>
+             <div class='control-group'><label for='irr_schEnabled'>Estado:</label><select id='irr_schEnabled'><option value='1'>Habilitado</option><option value='0'>Deshabilitado</option></select></div>
+             <button id='irr_schSaveBtn' class='btn btn-primary'>Guardar</button>
+             <button id='irr_schCancelBtn' style='display:none;' class='btn btn-secondary'>Cancelar Edición</button>
         </div>
     </div>
+
+    <!-- --- PASO 2: Sección Planificador Cámara (IDs con prefijo cam_) --- -->
+    <div class='section'>
+        <h2>Planificador Cámara (Máx: <span id='cam_maxEntries'></span>)</h2>
+        <div id='cam_scheduleList' class='mb-4'>Cargando horarios...</div>
+        <h3>Añadir / Modificar Horario (Cámara)</h3>
+        <div class='flex flex-wrap items-center gap-2'>
+             <input type='hidden' id='cam_schEditIndex' value='-1'>
+             <div class='control-group'><label for='cam_schDays'>Días (LMXJVSD*):</label><input type='text' id='cam_schDays' size='7'></div>
+             <div class='control-group'><label for='cam_schHour'>Hora (0-23):</label><input type='number' id='cam_schHour' min='0' max='23'></div>
+             <div class='control-group'><label for='cam_schMinute'>Min (0-59):</label><input type='number' id='cam_schMinute' min='0' max='59'></div>
+             <div class='control-group'><label for='cam_schAction'>Acción:</label><select id='cam_schAction'><option value='1'>ON</option><option value='0'>OFF</option></select></div>
+             <div class='control-group'><label for='cam_schEnabled'>Estado:</label><select id='cam_schEnabled'><option value='1'>Habilitado</option><option value='0'>Deshabilitado</option></select></div>
+             <button id='cam_schSaveBtn' class='btn btn-primary'>Guardar</button>
+             <button id='cam_schCancelBtn' style='display:none;' class='btn btn-secondary'>Cancelar Edición</button>
+        </div>
+    </div>
+    <!-- --- FIN PASO 2 --- -->
 
 </div> <script>
 const ws = new WebSocket('ws://' + window.location.hostname + ':81/');
@@ -273,36 +328,67 @@ function updateStatus(data) {
   document.getElementById('relayPumpState').innerText = data.relayPumpState ? 'ON' : 'OFF';
   document.getElementById('relayValveName').innerText = (data.relayValveName || 'Relé Válvula') + ':';
   document.getElementById('relayValveState').innerText = data.relayValveState ? 'ON (Cierra)' : 'OFF (Abre)';
-  document.getElementById('maxEntries').innerText = data.maxEntries !== undefined ? data.maxEntries : '??';
+  document.getElementById('relayCameraName').innerText = (data.relayCameraName || 'Relé Cámara') + ':';
+  document.getElementById('relayCameraState').innerText = data.relayCameraState ? 'ON (Corta)' : 'OFF (Permite)';
+
+  const maxEntries = data.maxEntriesPerScheduler !== undefined ? data.maxEntriesPerScheduler : '??';
+  document.getElementById('irr_maxEntries').innerText = maxEntries;
+  document.getElementById('cam_maxEntries').innerText = maxEntries; // <-- PASO 2: Actualizar maxEntries de Cámara
 
   updateInputValueIfNotFocused('inpVMin', data.vMin, 2);
   updateInputValueIfNotFocused('inpVMax', data.vMax, 2);
   updateInputValueIfNotFocused('inpPVMin', data.pumpVMin, 2);
   updateInputValueIfNotFocused('inpPVMax', data.pumpVMax, 2);
+  updateInputValueIfNotFocused('inpCVMin', data.cameraVMin, 2);
+  updateInputValueIfNotFocused('inpCVMax', data.cameraVMax, 2);
   updateInputValueIfNotFocused('inpMaxCycles', data.maxCycles);
   updateInputValueIfNotFocused('inpPumpTimeout', data.pumpTimeoutS);
   updateInputValueIfNotFocused('inpValveDuration', data.valveDurationS);
 
-  const scheduleDiv = document.getElementById('scheduleList');
-  if(data.schedule) {
-      scheduleDiv.innerHTML = '';
-      if (data.schedule.length === 0) { scheduleDiv.innerHTML = '<p>No hay horarios programados.</p>'; }
+  // --- Actualizar la lista de horarios de RIEGO (irrigation) ---
+  const irrScheduleDiv = document.getElementById('irr_scheduleList');
+  if(data.scheduleIrrigation) {
+      irrScheduleDiv.innerHTML = '';
+      if (data.scheduleIrrigation.length === 0) { irrScheduleDiv.innerHTML = '<p>No hay horarios programados.</p>'; }
       else {
           const daysToString = (mask) => { if (mask === 127) return '*'; let s = ''; if (mask & 1) s += 'D'; if (mask & 2) s += 'L'; if (mask & 4) s += 'M'; if (mask & 8) s += 'X'; if (mask & 16) s += 'J'; if (mask & 32) s += 'V'; if (mask & 64) s += 'S'; return s || '-'; };
-          data.schedule.forEach((entry, index) => {
+          data.scheduleIrrigation.forEach((entry, index) => {
               const div = document.createElement('div');
               const daysStr = entry.daysMask !== undefined ? daysToString(entry.daysMask) : '--';
               div.innerHTML = `
                   <span>[${index}] ${daysStr} ${String(entry.hour).padStart(2,'0')}:${String(entry.minute).padStart(2,'0')} -> ${entry.action ? 'ON' : 'OFF'} (${entry.enabled ? 'Hab' : 'Des'})</span>
                   <div>
-                      <button class='btn btn-secondary btn-sm' onclick='editSchedule(${index})'>Editar</button>
-                      <button class='btn btn-danger btn-sm' onclick='deleteSchedule(${index})'>Borrar</button>
-                      <button class='btn btn-secondary btn-sm' onclick='toggleSchedule(${index}, ${!entry.enabled})'>${entry.enabled ? 'Deshab' : 'Habil'}</button>
+                      <button class='btn btn-secondary btn-sm' onclick='irr_editSchedule(${index})'>Editar</button>
+                      <button class='btn btn-danger btn-sm' onclick='irr_deleteSchedule(${index})'>Borrar</button>
+                      <button class='btn btn-secondary btn-sm' onclick='irr_toggleSchedule(${index}, ${!entry.enabled})'>${entry.enabled ? 'Deshab' : 'Habil'}</button>
                   </div>`;
-              scheduleDiv.appendChild(div);
+              irrScheduleDiv.appendChild(div);
           });
       }
-  } else { scheduleDiv.innerText = 'Cargando...'; }
+  } else { irrScheduleDiv.innerText = 'Cargando...'; }
+
+  // --- PASO 2: Actualizar la lista de horarios de CÁMARA (camera) ---
+  const camScheduleDiv = document.getElementById('cam_scheduleList');
+  if(data.scheduleCamera) { // <-- Usar 'data.scheduleCamera'
+      camScheduleDiv.innerHTML = '';
+      if (data.scheduleCamera.length === 0) { camScheduleDiv.innerHTML = '<p>No hay horarios programados.</p>'; }
+      else {
+          const daysToString = (mask) => { if (mask === 127) return '*'; let s = ''; if (mask & 1) s += 'D'; if (mask & 2) s += 'L'; if (mask & 4) s += 'M'; if (mask & 8) s += 'X'; if (mask & 16) s += 'J'; if (mask & 32) s += 'V'; if (mask & 64) s += 'S'; return s || '-'; };
+          data.scheduleCamera.forEach((entry, index) => {
+              const div = document.createElement('div');
+              const daysStr = entry.daysMask !== undefined ? daysToString(entry.daysMask) : '--';
+              div.innerHTML = `
+                  <span>[${index}] ${daysStr} ${String(entry.hour).padStart(2,'0')}:${String(entry.minute).padStart(2,'0')} -> ${entry.action ? 'ON' : 'OFF'} (${entry.enabled ? 'Hab' : 'Des'})</span>
+                  <div>
+                      <button class='btn btn-secondary btn-sm' onclick='cam_editSchedule(${index})'>Editar</button>
+                      <button class='btn btn-danger btn-sm' onclick='cam_deleteSchedule(${index})'>Borrar</button>
+                      <button class='btn btn-secondary btn-sm' onclick='cam_toggleSchedule(${index}, ${!entry.enabled})'>${entry.enabled ? 'Deshab' : 'Habil'}</button>
+                  </div>`;
+              camScheduleDiv.appendChild(div);
+          });
+      }
+  } else { camScheduleDiv.innerText = 'Cargando...'; }
+  // --- FIN PASO 2 ---
 }
 
 function updateInputValueIfNotFocused(elementId, value, precision = 0) {
@@ -312,8 +398,19 @@ function updateInputValueIfNotFocused(elementId, value, precision = 0) {
     } else if (document.activeElement !== inputElement) { inputElement.value = ''; }
 }
 
-function sendWsCommand(cmd, value = null) { const payload = { command: cmd }; if (value !== null) payload.value = value; console.log('Enviando comando WS:', payload); ws.send(JSON.stringify(payload)); }
-function sendWsDataCommand(cmd, data) { const payload = { command: cmd, data: data }; console.log('Enviando comando WS con datos:', payload); ws.send(JSON.stringify(payload)); }
+function sendWsCommand(cmd, value = null, target = null) {
+    const payload = { command: cmd };
+    if (value !== null) payload.value = value;
+    if (target !== null) payload.target = target;
+    console.log('Enviando comando WS:', payload);
+    ws.send(JSON.stringify(payload));
+}
+function sendWsDataCommand(cmd, data, target = null) {
+    const payload = { command: cmd, data: data };
+    if (target !== null) payload.target = target;
+    console.log('Enviando comando WS con datos:', payload);
+    ws.send(JSON.stringify(payload));
+}
 
 document.getElementById('btnStartIrrigation').addEventListener('click', () => sendWsCommand('r1'));
 document.getElementById('btnStopIrrigation').addEventListener('click', () => sendWsCommand('r0'));
@@ -327,25 +424,55 @@ document.getElementById('btnSetVMin').addEventListener('click', () => { const va
 document.getElementById('btnSetVMax').addEventListener('click', () => { const val = document.getElementById('inpVMax').value; if(val !== '') sendWsCommand('set_vmax', parseFloat(val)); });
 document.getElementById('btnSetPVMin').addEventListener('click', () => { const val = document.getElementById('inpPVMin').value; if(val !== '') sendWsCommand('set_pvmin', parseFloat(val)); });
 document.getElementById('btnSetPVMax').addEventListener('click', () => { const val = document.getElementById('inpPVMax').value; if(val !== '') sendWsCommand('set_pvmax', parseFloat(val)); });
+document.getElementById('btnSetCVMin').addEventListener('click', () => { const val = document.getElementById('inpCVMin').value; if(val !== '') sendWsCommand('set_cvmin', parseFloat(val)); });
+document.getElementById('btnSetCVMax').addEventListener('click', () => { const val = document.getElementById('inpCVMax').value; if(val !== '') sendWsCommand('set_cvmax', parseFloat(val)); });
 document.getElementById('btnSetMaxCycles').addEventListener('click', () => { const val = document.getElementById('inpMaxCycles').value; if(val !== '') sendWsCommand('set_maxcycles', parseInt(val)); });
 document.getElementById('btnSetPumpTimeout').addEventListener('click', () => { const val = document.getElementById('inpPumpTimeout').value; if(val !== '') sendWsCommand('set_pumptimeout', parseInt(val)); });
 document.getElementById('btnSetValveDuration').addEventListener('click', () => { const val = document.getElementById('inpValveDuration').value; if(val !== '') sendWsCommand('set_valveduration', parseInt(val)); });
 document.getElementById('btnSetTime').addEventListener('click', () => { const val = document.getElementById('inpSetTime').value; if(val !== '') sendWsCommand('set_time', val); });
 document.getElementById('btnResetConfig').addEventListener('click', () => { if(confirm('¿Seguro que quieres borrar la configuración y reiniciar?')) sendWsCommand('resetconfig'); });
 
-function clearScheduleForm() { document.getElementById('schEditIndex').value = '-1'; document.getElementById('schDays').value = ''; document.getElementById('schHour').value = ''; document.getElementById('schMinute').value = ''; document.getElementById('schAction').value = '1'; document.getElementById('schEnabled').value = '1'; document.getElementById('schCancelBtn').style.display = 'none'; document.getElementById('schSaveBtn').innerText = 'Añadir Horario'; }
-function editSchedule(index) { if (lastStatusData && lastStatusData.schedule && lastStatusData.schedule[index]) { const entry = lastStatusData.schedule[index]; document.getElementById('schEditIndex').value = index; document.getElementById('schDays').value = entry.daysMask !== undefined ? daysToString(entry.daysMask) : ''; document.getElementById('schHour').value = entry.hour; document.getElementById('schMinute').value = entry.minute; document.getElementById('schAction').value = entry.action ? '1' : '0'; document.getElementById('schEnabled').value = entry.enabled ? '1' : '0'; document.getElementById('schCancelBtn').style.display = 'inline-block'; document.getElementById('schSaveBtn').innerText = 'Guardar Cambios'; } }
-function deleteSchedule(index) { if (confirm(`¿Seguro que quieres borrar el horario [${index}]?`)) { sendWsCommand('sch_del', index); } }
-function toggleSchedule(index, enable) { sendWsCommand(enable ? 'sch_enable' : 'sch_disable', index); }
+// --- Funciones JS del planificador de RIEGO (irr_) ---
+function irr_clearScheduleForm() {
+    document.getElementById('irr_schEditIndex').value = '-1';
+    document.getElementById('irr_schDays').value = '';
+    document.getElementById('irr_schHour').value = '';
+    document.getElementById('irr_schMinute').value = '';
+    document.getElementById('irr_schAction').value = '1';
+    document.getElementById('irr_schEnabled').value = '1';
+    document.getElementById('irr_schCancelBtn').style.display = 'none';
+    document.getElementById('irr_schSaveBtn').innerText = 'Añadir Horario';
+}
+function irr_editSchedule(index) {
+    if (lastStatusData && lastStatusData.scheduleIrrigation && lastStatusData.scheduleIrrigation[index]) {
+        const entry = lastStatusData.scheduleIrrigation[index];
+        document.getElementById('irr_schEditIndex').value = index;
+        document.getElementById('irr_schDays').value = entry.daysMask !== undefined ? daysToString(entry.daysMask) : '';
+        document.getElementById('irr_schHour').value = entry.hour;
+        document.getElementById('irr_schMinute').value = entry.minute;
+        document.getElementById('irr_schAction').value = entry.action ? '1' : '0';
+        document.getElementById('irr_schEnabled').value = entry.enabled ? '1' : '0';
+        document.getElementById('irr_schCancelBtn').style.display = 'inline-block';
+        document.getElementById('irr_schSaveBtn').innerText = 'Guardar Cambios';
+    }
+}
+function irr_deleteSchedule(index) {
+    if (confirm(`¿Seguro que quieres borrar el horario [${index}]?`)) {
+        sendWsCommand('sch_del_r', index);
+    }
+}
+function irr_toggleSchedule(index, enable) {
+    sendWsCommand(enable ? 'sch_enable_r' : 'sch_disable_r', index);
+}
 
-document.getElementById('schSaveBtn').addEventListener('click', () => {
-    const index = parseInt(document.getElementById('schEditIndex').value);
+document.getElementById('irr_schSaveBtn').addEventListener('click', () => {
+    const index = parseInt(document.getElementById('irr_schEditIndex').value);
     const scheduleData = {
-        days: document.getElementById('schDays').value,
-        hour: parseInt(document.getElementById('schHour').value),
-        minute: parseInt(document.getElementById('schMinute').value),
-        action: document.getElementById('schAction').value === '1',
-        enabled: document.getElementById('schEnabled').value === '1'
+        days: document.getElementById('irr_schDays').value,
+        hour: parseInt(document.getElementById('irr_schHour').value),
+        minute: parseInt(document.getElementById('irr_schMinute').value),
+        action: document.getElementById('irr_schAction').value === '1',
+        enabled: document.getElementById('irr_schEnabled').value === '1'
     };
     if (!scheduleData.days || isNaN(scheduleData.hour) || isNaN(scheduleData.minute) || scheduleData.hour < 0 || scheduleData.hour > 23 || scheduleData.minute < 0 || scheduleData.minute > 59) {
         alert('Por favor, introduce datos válidos para el horario.');
@@ -353,20 +480,85 @@ document.getElementById('schSaveBtn').addEventListener('click', () => {
     }
 
     if (index === -1) { // Añadir nuevo
-        sendWsDataCommand('sch_add', scheduleData);
+        sendWsDataCommand('sch_add_r', scheduleData);
     } else { // Editar existente (Borrar + Añadir)
         console.log(`Editando índice ${index}: Borrando y añadiendo de nuevo.`);
-        sendWsCommand('sch_del', index);
+        sendWsCommand('sch_del_r', index);
         setTimeout(() => {
-             sendWsDataCommand('sch_add', scheduleData);
-             clearScheduleForm();
+             sendWsDataCommand('sch_add_r', scheduleData);
+             irr_clearScheduleForm();
         }, 100);
         return;
     }
-    clearScheduleForm();
+    irr_clearScheduleForm();
 });
 
-document.getElementById('schCancelBtn').addEventListener('click', clearScheduleForm);
+document.getElementById('irr_schCancelBtn').addEventListener('click', irr_clearScheduleForm);
+
+// --- PASO 2: Funciones JS del planificador de CÁMARA (cam_) ---
+function cam_clearScheduleForm() {
+    document.getElementById('cam_schEditIndex').value = '-1';
+    document.getElementById('cam_schDays').value = '';
+    document.getElementById('cam_schHour').value = '';
+    document.getElementById('cam_schMinute').value = '';
+    document.getElementById('cam_schAction').value = '1';
+    document.getElementById('cam_schEnabled').value = '1';
+    document.getElementById('cam_schCancelBtn').style.display = 'none';
+    document.getElementById('cam_schSaveBtn').innerText = 'Añadir Horario';
+}
+function cam_editSchedule(index) {
+    if (lastStatusData && lastStatusData.scheduleCamera && lastStatusData.scheduleCamera[index]) {
+        const entry = lastStatusData.scheduleCamera[index];
+        document.getElementById('cam_schEditIndex').value = index;
+        document.getElementById('cam_schDays').value = entry.daysMask !== undefined ? daysToString(entry.daysMask) : '';
+        document.getElementById('cam_schHour').value = entry.hour;
+        document.getElementById('cam_schMinute').value = entry.minute;
+        document.getElementById('cam_schAction').value = entry.action ? '1' : '0';
+        document.getElementById('cam_schEnabled').value = entry.enabled ? '1' : '0';
+        document.getElementById('cam_schCancelBtn').style.display = 'inline-block';
+        document.getElementById('cam_schSaveBtn').innerText = 'Guardar Cambios';
+    }
+}
+function cam_deleteSchedule(index) {
+    if (confirm(`¿Seguro que quieres borrar el horario [${index}]?`)) {
+        sendWsCommand('sch_del_c', index); // <-- Comando 'sch_del_c'
+    }
+}
+function cam_toggleSchedule(index, enable) {
+    sendWsCommand(enable ? 'sch_enable_c' : 'sch_disable_c', index); // <-- Comandos 'sch_enable_c' / 'sch_disable_c'
+}
+
+document.getElementById('cam_schSaveBtn').addEventListener('click', () => {
+    const index = parseInt(document.getElementById('cam_schEditIndex').value);
+    const scheduleData = {
+        days: document.getElementById('cam_schDays').value,
+        hour: parseInt(document.getElementById('cam_schHour').value),
+        minute: parseInt(document.getElementById('cam_schMinute').value),
+        action: document.getElementById('cam_schAction').value === '1',
+        enabled: document.getElementById('cam_schEnabled').value === '1'
+    };
+    if (!scheduleData.days || isNaN(scheduleData.hour) || isNaN(scheduleData.minute) || scheduleData.hour < 0 || scheduleData.hour > 23 || scheduleData.minute < 0 || scheduleData.minute > 59) {
+        alert('Por favor, introduce datos válidos para el horario.');
+        return;
+    }
+
+    if (index === -1) { // Añadir nuevo
+        sendWsDataCommand('sch_add_c', scheduleData); // <-- Comando 'sch_add_c'
+    } else { // Editar existente (Borrar + Añadir)
+        console.log(`Editando índice ${index}: Borrando y añadiendo de nuevo.`);
+        sendWsCommand('sch_del_c', index); // <-- Comando 'sch_del_c'
+        setTimeout(() => {
+             sendWsDataCommand('sch_add_c', scheduleData); // <-- Comando 'sch_add_c'
+             cam_clearScheduleForm();
+        }, 100);
+        return;
+    }
+    cam_clearScheduleForm();
+});
+
+document.getElementById('cam_schCancelBtn').addEventListener('click', cam_clearScheduleForm);
+// --- FIN PASO 2 ---
+
 
 const daysToString = (mask) => { if (mask === 127) return '*'; let s = ''; if (mask & 1) s += 'D'; if (mask & 2) s += 'L'; if (mask & 4) s += 'M'; if (mask & 8) s += 'X'; if (mask & 16) s += 'J'; if (mask & 32) s += 'V'; if (mask & 64) s += 'S'; return s || '-'; };
 
@@ -409,7 +601,7 @@ private:
     static constexpr const char* RELAY_TAG = "Relay";
 public:
     Relay(int pin = -1, const char* name = "Unnamed Relay", bool activeHigh = true) :
-        _pin(pin), _name(name), _activeHigh(activeHigh), _currentState(false)
+            _pin(pin), _name(name), _activeHigh(activeHigh), _currentState(false)
     {}
 
     void begin()
@@ -446,7 +638,7 @@ private:
     static constexpr const char* SENSOR_TAG = "WaterSensor";
 public:
     WaterLevelSensor(int pin, bool activeLow, const char* name = "Nivel Agua") :
-        _pin(pin), _activeLow(activeLow), _name(name)
+            _pin(pin), _activeLow(activeLow), _name(name)
     {}
 
     void begin()
@@ -476,7 +668,7 @@ private:
     static constexpr const char* SENSOR_TAG = "VoltageSensor";
 public:
     VoltageSensor(int pin, float scaleFactor, const char* name, float vRef = ADC_VREF, int adcMaxValue = ADC_MAX_VALUE) :
-        _pin(pin), _scaleFactor(scaleFactor), _name(name), _vRef(vRef), _adcMaxValue(adcMaxValue)
+            _pin(pin), _scaleFactor(scaleFactor), _name(name), _vRef(vRef), _adcMaxValue(adcMaxValue)
     {}
 
     void begin()
@@ -493,11 +685,29 @@ public:
         float voltage = (raw * _vRef / (float)_adcMaxValue) * _scaleFactor;
         return voltage;
     }
-     const char* getName() const { return _name; }
+    const char* getName() const { return _name; }
 };
 
+
+// --- *** NUEVA INTERFAZ CONTROLLER *** ---
+/** @brief Interfaz base para todos los controladores. */
+class Controller
+{
+public:
+    /** @brief Destructor virtual para la clase base. */
+    virtual ~Controller() {}
+
+    /** @brief Activa o habilita el controlador. */
+    virtual void enable() = 0;
+
+    /** @brief Desactiva o deshabilita el controlador. */
+    virtual void disable() = 0;
+};
+// --- *** FIN NUEVA INTERFAZ *** ---
+
+
 // --- Clase VoltageController ---
-class VoltageController
+class VoltageController : public Controller
 {
 public:
     enum ForcedStateOnDisable { FORCE_OFF, FORCE_ON, LEAVE_AS_IS };
@@ -525,9 +735,9 @@ private:
 
         if (_relay.isOn() != targetState)
         {
-             Serial.printf("[%s] %s: V=%.2fV (Rango: %.2f-%.2f). Objetivo: %s.\n",
-                           CONTROLLER_TAG, _name, currentVoltage, _minThreshold, _maxThreshold,
-                           targetState ? "ON" : "OFF");
+            Serial.printf("[%s] %s: V=%.2fV (Rango: %.2f-%.2f). Objetivo: %s.\n",
+                          CONTROLLER_TAG, _name, currentVoltage, _minThreshold, _maxThreshold,
+                          targetState ? "ON" : "OFF");
         }
         _relay.setState(targetState);
     }
@@ -538,15 +748,15 @@ public:
                       float initialVMin, float initialVMax,
                       unsigned long interval, bool invertedLogic,
                       const char* controllerName = "Controlador Voltaje") :
-        _sensor(sensor),
-        _relay(relayPin, relayName, relayActiveHigh),
-        _minThreshold(initialVMin),
-        _maxThreshold(initialVMax),
-        _controlInterval(interval),
-        _lastControlTime(0),
-        _name(controllerName),
-        _controlLogicInverted(invertedLogic),
-        _isEnabled(true)
+            _sensor(sensor),
+            _relay(relayPin, relayName, relayActiveHigh),
+            _minThreshold(initialVMin),
+            _maxThreshold(initialVMax),
+            _controlInterval(interval),
+            _lastControlTime(0),
+            _name(controllerName),
+            _controlLogicInverted(invertedLogic),
+            _isEnabled(true)
     {}
 
     void begin()
@@ -554,51 +764,75 @@ public:
         _relay.begin();
     }
 
-    void enable() { if (!_isEnabled) { Serial.printf("[%s] %s HABILITADO.\n", CONTROLLER_TAG, _name); _isEnabled = true; } }
-    void disable(ForcedStateOnDisable finalState = FORCE_OFF)
+    /** @brief Habilita el control (implementa Controller). */
+    void enable() override
+    {
+        if (!_isEnabled) {
+            Serial.printf("[%s] %s HABILITADO.\n", CONTROLLER_TAG, _name);
+            _isEnabled = true;
+        }
+    }
+
+    /** @brief Deshabilita el control (implementa Controller). */
+    void disable() override
+    {
+        disable(FORCE_OFF); // Llama a la versión con estado forzado por defecto
+    }
+
+    /** @brief Deshabilita el control especificando un estado final para el relé. */
+    void disable(ForcedStateOnDisable finalState)
     {
         if (_isEnabled)
         {
-             Serial.printf("[%s] %s DESHABILITADO.\n", CONTROLLER_TAG, _name);
-            _isEnabled = false;
-            switch (finalState)
-            {
-                case FORCE_OFF: _relay.off(); break;
-                case FORCE_ON: _relay.on(); break;
-                case LEAVE_AS_IS: break;
-            }
+            Serial.printf("[%s] %s DESHABILITADO (Control Manual).\n", CONTROLLER_TAG, _name);
+        }
+        _isEnabled = false;
+
+        switch (finalState)
+        {
+            case FORCE_OFF: _relay.off(); break;
+            case FORCE_ON: _relay.on(); break;
+            case LEAVE_AS_IS: break;
         }
     }
     bool isEnabled() const { return _isEnabled; }
     void update() { if (!_isEnabled) { return; } if (millis() - _lastControlTime >= _controlInterval) { _lastControlTime = millis(); runControlLogic(); } }
 
-    bool setVMin(float newVMin)
+    bool setVMin(float newVMin, bool skipChecks = false)
     {
-        if (newVMin > 0 && newVMin < _maxThreshold)
+        if ((skipChecks && newVMin > 0) || (!skipChecks && newVMin > 0 && newVMin < _maxThreshold))
         {
             if (_minThreshold != newVMin)
             {
-                 _minThreshold = newVMin;
-                 Serial.printf("[%s] %s: vMin actualizado a: %.2f V\n", CONTROLLER_TAG, _name, _minThreshold);
-                 return true;
+                _minThreshold = newVMin;
+                Serial.printf("[%s] %s: vMin actualizado a: %.2f V\n", CONTROLLER_TAG, _name, _minThreshold);
+                return true;
             }
             return false;
         }
-        else { Serial.printf("[%s] %s: Error: Valor inválido para vMin (%.2f). Debe ser > 0 y < vMax (%.2f).\n", CONTROLLER_TAG, _name, newVMin, _maxThreshold); return false; }
+        else {
+            if (skipChecks) { Serial.printf("[%s] %s: Error: Valor inválido para vMin (%.2f). Debe ser > 0.\n", CONTROLLER_TAG, _name, newVMin); }
+            else { Serial.printf("[%s] %s: Error: Valor inválido para vMin (%.2f). Debe ser > 0 y < vMax (%.2f).\n", CONTROLLER_TAG, _name, newVMin, _maxThreshold); }
+            return false;
+        }
     }
-    bool setVMax(float newVMax)
+    bool setVMax(float newVMax, bool skipChecks = false)
     {
-        if (newVMax > 0 && newVMax > _minThreshold)
+        if ((skipChecks && newVMax > 0) || (!skipChecks && newVMax > 0 && newVMax > _minThreshold))
         {
-             if (_maxThreshold != newVMax)
-             {
+            if (_maxThreshold != newVMax)
+            {
                 _maxThreshold = newVMax;
                 Serial.printf("[%s] %s: vMax actualizado a: %.2f V\n", CONTROLLER_TAG, _name, _maxThreshold);
                 return true;
-             }
-             return false;
+            }
+            return false;
         }
-        else { Serial.printf("[%s] %s: Error: Valor inválido para vMax (%.2f). Debe ser > 0 y > vMin (%.2f).\n", CONTROLLER_TAG, _name, newVMax, _minThreshold); return false; }
+        else {
+            if (skipChecks) { Serial.printf("[%s] %s: Error: Valor inválido para vMax (%.2f). Debe ser > 0.\n", CONTROLLER_TAG, _name, newVMax); }
+            else { Serial.printf("[%s] %s: Error: Valor inválido para vMax (%.2f). Debe ser > 0 y > vMin (%.2f).\n", CONTROLLER_TAG, _name, newVMax, _minThreshold); }
+            return false;
+        }
     }
     float getVMin() const { return _minThreshold; }
     float getVMax() const { return _maxThreshold; }
@@ -608,7 +842,7 @@ public:
 };
 
 // --- Clase IrrigationController ---
-class IrrigationController
+class IrrigationController : public Controller
 {
 public:
     enum IrrigationState { IDLE, PREPARE_PUMPING, PUMPING, START_VALVE_WAIT, VALVE_WAIT, STOPPING };
@@ -654,36 +888,48 @@ private:
 
 public:
     IrrigationController(Relay& valve, WaterLevelSensor& sensor, VoltageController& pumpVoltageCtrl,
-                         // unsigned long valveOpenDurationMs, // Ya no es const, se lee de EEPROM
+            // unsigned long valveOpenDurationMs, // Ya no es const, se lee de EEPROM
                          uint8_t initialMaxCycles,
                          unsigned long initialPumpTimeoutS,
                          bool initialDailyLimitEnabled,
                          bool initialTimeoutLockout,
                          const char* name = "Control Riego") :
-        _valveRelay(valve),
-        _levelSensor(sensor),
-        _pumpVoltageController(pumpVoltageCtrl),
-        _currentState(IDLE),
-        _isActive(false),
-        _valveOpenStartTime(0),
-        _valveOpenDurationMs(INITIAL_VALVE_OPEN_DURATION_S * 1000UL), // Valor inicial por defecto
-        _cyclesToday(0),
-        _maxCyclesPerDay(initialMaxCycles > 0 ? initialMaxCycles : 1),
-        _dailyLimitEnabled(initialDailyLimitEnabled),
-        _forceNextCycle(false),
-        _pumpingStartTime(0),
-        _pumpTimeoutDuration(initialPumpTimeoutS > 0 ? initialPumpTimeoutS * 1000UL : 60000UL),
-        _accumulatedPumpOnTimeMs(0),
-        _lastUpdateTimeMs(0),
-        _timeoutLockoutActive(initialTimeoutLockout),
-        _name(name)
+            _valveRelay(valve),
+            _levelSensor(sensor),
+            _pumpVoltageController(pumpVoltageCtrl),
+            _currentState(IDLE),
+            _isActive(false),
+            _valveOpenStartTime(0),
+            _valveOpenDurationMs(INITIAL_VALVE_OPEN_DURATION_S * 1000UL), // Valor inicial por defecto
+            _cyclesToday(0),
+            _maxCyclesPerDay(initialMaxCycles > 0 ? initialMaxCycles : 1),
+            _dailyLimitEnabled(initialDailyLimitEnabled),
+            _forceNextCycle(false),
+            _pumpingStartTime(0),
+            _pumpTimeoutDuration(initialPumpTimeoutS > 0 ? initialPumpTimeoutS * 1000UL : 60000UL),
+            _accumulatedPumpOnTimeMs(0),
+            _lastUpdateTimeMs(0),
+            _timeoutLockoutActive(initialTimeoutLockout),
+            _name(name)
     {}
 
     void begin()
     {
-         _pumpVoltageController.disable(VoltageController::FORCE_OFF);
-         _accumulatedPumpOnTimeMs = 0;
-         _lastUpdateTimeMs = millis();
+        _pumpVoltageController.disable(VoltageController::FORCE_OFF);
+        _accumulatedPumpOnTimeMs = 0;
+        _lastUpdateTimeMs = millis();
+    }
+
+    /** @brief Habilita el riego (implementa Controller). */
+    void enable() override
+    {
+        start();
+    }
+
+    /** @brief Deshabilita el riego (implementa Controller). */
+    void disable() override
+    {
+        stop();
     }
 
     void start()
@@ -692,15 +938,15 @@ public:
         if (_timeoutLockoutActive) { Serial.printf("[%s] Riego bloqueado hoy debido a timeout previo.\n", CONTROLLER_TAG); return; }
         if (!_isActive)
         {
-             _isActive = true;
-             if (_currentState == IDLE) { changeState(PREPARE_PUMPING); }
-             else { Serial.printf("[%s] Riego ya estaba en curso (estado %s), marcado como activo.\n", CONTROLLER_TAG, getStateString(_currentState)); }
+            _isActive = true;
+            if (_currentState == IDLE) { changeState(PREPARE_PUMPING); }
+            else { Serial.printf("[%s] Riego ya estaba en curso (estado %s), marcado como activo.\n", CONTROLLER_TAG, getStateString(_currentState)); }
         }
-         else { Serial.printf("[%s] Riego ya estaba activo.\n", CONTROLLER_TAG); }
+        else { Serial.printf("[%s] Riego ya estaba activo.\n", CONTROLLER_TAG); }
     }
     void stop()
     {
-         Serial.printf("[%s] Solicitud STOP recibida.\n", CONTROLLER_TAG);
+        Serial.printf("[%s] Solicitud STOP recibida.\n", CONTROLLER_TAG);
         if (_isActive)
         {
             _isActive = false;
@@ -735,9 +981,9 @@ public:
         {
             if (_maxCyclesPerDay != limit)
             {
-                 _maxCyclesPerDay = limit;
-                 Serial.printf("[%s] Límite máximo de ciclos por día establecido a: %d\n", CONTROLLER_TAG, _maxCyclesPerDay);
-                 return true;
+                _maxCyclesPerDay = limit;
+                Serial.printf("[%s] Límite máximo de ciclos por día establecido a: %d\n", CONTROLLER_TAG, _maxCyclesPerDay);
+                return true;
             }
             return false;
         }
@@ -769,7 +1015,7 @@ public:
                 Serial.printf("[%s] Timeout de bomba actualizado a: %lu s\n", CONTROLLER_TAG, timeoutSeconds);
                 return true;
             }
-             return false;
+            return false;
         }
         else { Serial.printf("[%s] Error: Timeout de bomba debe ser mayor que 0 segundos.\n", CONTROLLER_TAG); return false; }
     }
@@ -794,8 +1040,8 @@ public:
     {
         if (_timeoutLockoutActive != lockoutState)
         {
-             _timeoutLockoutActive = lockoutState;
-             Serial.printf("[%s] Estado de bloqueo por timeout aplicado desde config: %s.\n", CONTROLLER_TAG, _timeoutLockoutActive ? "ACTIVO" : "Inactivo");
+            _timeoutLockoutActive = lockoutState;
+            Serial.printf("[%s] Estado de bloqueo por timeout aplicado desde config: %s.\n", CONTROLLER_TAG, _timeoutLockoutActive ? "ACTIVO" : "Inactivo");
         }
     }
 
@@ -811,10 +1057,10 @@ public:
         {
             case IDLE: break;
             case PREPARE_PUMPING:
-                 if (_timeoutLockoutActive) { Serial.printf("[%s] Intento de inicio bloqueado por timeout previo.\n", CONTROLLER_TAG); stop(); break; }
-                 if (_dailyLimitEnabled && !_forceNextCycle && _cyclesToday >= _maxCyclesPerDay) { Serial.printf("[%s] Límite de %d ciclos diarios alcanzado. Riego detenido para hoy.\n", CONTROLLER_TAG, _maxCyclesPerDay); stop(); break; }
-                 Serial.printf("[%s] Estado PREPARE_PUMPING: Cerrando válvula, habilitando control bomba, reseteando timers (Ciclo %d/%d%s)...\n", CONTROLLER_TAG, _cyclesToday + 1, _maxCyclesPerDay, _forceNextCycle ? ", FORZADO" : "");
-                 _valveRelay.on(); _pumpVoltageController.enable(); _pumpingStartTime = currentTimeMs; _accumulatedPumpOnTimeMs = 0; _forceNextCycle = false; changeState(PUMPING); break;
+                if (_timeoutLockoutActive) { Serial.printf("[%s] Intento de inicio bloqueado por timeout previo.\n", CONTROLLER_TAG); stop(); break; }
+                if (_dailyLimitEnabled && !_forceNextCycle && _cyclesToday >= _maxCyclesPerDay) { Serial.printf("[%s] Límite de %d ciclos diarios alcanzado. Riego detenido para hoy.\n", CONTROLLER_TAG, _maxCyclesPerDay); stop(); break; }
+                Serial.printf("[%s] Estado PREPARE_PUMPING: Cerrando válvula, habilitando control bomba, reseteando timers (Ciclo %d/%d%s)...\n", CONTROLLER_TAG, _cyclesToday + 1, _maxCyclesPerDay, _forceNextCycle ? ", FORZADO" : "");
+                _valveRelay.on(); _pumpVoltageController.enable(); _pumpingStartTime = currentTimeMs; _accumulatedPumpOnTimeMs = 0; _forceNextCycle = false; changeState(PUMPING); break;
             case PUMPING:
                 _pumpVoltageController.update();
                 if (_pumpVoltageController.isControlledRelayOn()) { _accumulatedPumpOnTimeMs += elapsedMs; }
@@ -832,15 +1078,15 @@ public:
                 }
                 break;
             case START_VALVE_WAIT:
-                 Serial.printf("[%s] Estado START_VALVE_WAIT: Abriendo válvula, iniciando temporizador.\n", CONTROLLER_TAG);
-                 _valveRelay.off(); _valveOpenStartTime = currentTimeMs; changeState(VALVE_WAIT); break;
+                Serial.printf("[%s] Estado START_VALVE_WAIT: Abriendo válvula, iniciando temporizador.\n", CONTROLLER_TAG);
+                _valveRelay.off(); _valveOpenStartTime = currentTimeMs; changeState(VALVE_WAIT); break;
             case VALVE_WAIT:
                 if (currentTimeMs - _valveOpenStartTime >= _valveOpenDurationMs)
                 {
-                     Serial.printf("[%s] Estado VALVE_WAIT: Tiempo de válvula abierta (%lu ms) completado.\n", CONTROLLER_TAG, _valveOpenDurationMs);
-                     _cyclesToday++; Serial.printf("[%s] Ciclo de riego %d/%d completado hoy.\n", CONTROLLER_TAG, _cyclesToday, _maxCyclesPerDay);
-                     saveConfiguration();
-                     if (_isActive) { changeState(PREPARE_PUMPING); } else { changeState(STOPPING); }
+                    Serial.printf("[%s] Estado VALVE_WAIT: Tiempo de válvula abierta (%lu ms) completado.\n", CONTROLLER_TAG, _valveOpenDurationMs);
+                    _cyclesToday++; Serial.printf("[%s] Ciclo de riego %d/%d completado hoy.\n", CONTROLLER_TAG, _cyclesToday, _maxCyclesPerDay);
+                    saveConfiguration();
+                    if (_isActive) { changeState(PREPARE_PUMPING); } else { changeState(STOPPING); }
                 }
                 break;
             case STOPPING:
@@ -870,11 +1116,11 @@ public:
     static const uint8_t DOW_SUN = (1 << 0); static const uint8_t DOW_MON = (1 << 1); static const uint8_t DOW_TUE = (1 << 2);
     static const uint8_t DOW_WED = (1 << 3); static const uint8_t DOW_THU = (1 << 4); static const uint8_t DOW_FRI = (1 << 5);
     static const uint8_t DOW_SAT = (1 << 6); static const uint8_t DOW_ALL = 0b01111111;
-    static const uint8_t MAX_ENTRIES = MAX_SCHEDULE_ENTRIES_EEPROM;
+    static const uint8_t MAX_ENTRIES = MAX_SCHEDULE_ENTRIES_PER_SCHEDULER;
 
 private:
     std::list<ScheduleEntry> _scheduleList;
-    IrrigationController& _irrigationCtrl;
+    Controller& _controller;
     uint8_t _lastMinuteChecked;
     const char* _name;
     static constexpr const char* SCHEDULER_TAG = "Scheduler";
@@ -902,41 +1148,42 @@ private:
         {
             if (entry.enabled && entry.hour == currentHour && entry.minute == currentMinute && (entry.daysOfWeekMask & currentDayMask))
             {
-                Serial.printf("[%s] ¡Coincidencia de horario! Días=%s, Hora=%02d:%02d, Acción=%s\n",
-                            SCHEDULER_TAG, daysMaskToString(entry.daysOfWeekMask).c_str(), entry.hour, entry.minute, entry.activate ? "ON" : "OFF");
-                if (entry.activate) { _irrigationCtrl.start(); } else { _irrigationCtrl.stop(); }
+                Serial.printf("[%s] %s: ¡Coincidencia de horario! Días=%s, Hora=%02d:%02d, Acción=%s\n",
+                              SCHEDULER_TAG, _name, daysMaskToString(entry.daysOfWeekMask).c_str(), entry.hour, entry.minute, entry.activate ? "ON" : "OFF");
+
+                if (entry.activate) { _controller.enable(); } else { _controller.disable(); }
                 actionTaken = true;
             }
         }
     }
 
 public:
-    Scheduler(IrrigationController& irrigationCtrl, const char* name = "Scheduler") :
-        _irrigationCtrl(irrigationCtrl), _lastMinuteChecked(99), _name(name)
+    Scheduler(Controller& controller, const char* name = "Scheduler") :
+            _controller(controller), _lastMinuteChecked(99), _name(name)
     {}
     void begin() { Serial.printf("[%s] %s inicializado.\n", SCHEDULER_TAG, _name); }
     bool addEntry(uint8_t daysMask, uint8_t hour, uint8_t minute, bool activate, bool enabled = true)
     {
-        if (_scheduleList.size() >= MAX_ENTRIES) { Serial.printf("[%s] Error: No se pueden añadir más horarios (Límite: %d).\n", SCHEDULER_TAG, MAX_ENTRIES); return false; }
-        if (daysMask == 0 || hour > 23 || minute > 59) { Serial.printf("[%s] Error al añadir entrada: Datos inválidos (mask=%d, h=%d, m=%d).\n", SCHEDULER_TAG, daysMask, hour, minute); return false; }
+        if (_scheduleList.size() >= MAX_ENTRIES) { Serial.printf("[%s] %s: Error: No se pueden añadir más horarios (Límite: %d).\n", SCHEDULER_TAG, _name, MAX_ENTRIES); return false; }
+        if (daysMask == 0 || hour > 23 || minute > 59) { Serial.printf("[%s] %s: Error al añadir entrada: Datos inválidos (mask=%d, h=%d, m=%d).\n", SCHEDULER_TAG, _name, daysMask, hour, minute); return false; }
         _scheduleList.emplace_back(ScheduleEntry{daysMask, hour, minute, activate, enabled});
         const auto& addedEntry = _scheduleList.back();
-        Serial.printf("[%s] Nueva entrada añadida: Días=%s, Hora=%02d:%02d, Acción=%s, Habilitado=%s\n",
-                    SCHEDULER_TAG, daysMaskToString(addedEntry.daysOfWeekMask).c_str(), addedEntry.hour, addedEntry.minute, addedEntry.activate ? "ON" : "OFF", addedEntry.enabled ? "Si" : "No");
+        Serial.printf("[%s] %s: Nueva entrada añadida: Días=%s, Hora=%02d:%02d, Acción=%s, Habilitado=%s\n",
+                      SCHEDULER_TAG, _name, daysMaskToString(addedEntry.daysOfWeekMask).c_str(), addedEntry.hour, addedEntry.minute, addedEntry.activate ? "ON" : "OFF", addedEntry.enabled ? "Si" : "No");
         return true;
     }
     bool addEntryFromString(String data)
     {
         int firstComma = data.indexOf(','); int secondComma = data.indexOf(',', firstComma + 1); int thirdComma = data.indexOf(',', secondComma + 1);
-        if (firstComma == -1 || secondComma == -1 || thirdComma == -1) { Serial.printf("[%s] Error formato schadd: Se esperan 4 partes separadas por coma (DIAS,HH,MM,A). Recibido: %s\n", SCHEDULER_TAG, data.c_str()); return false; }
+        if (firstComma == -1 || secondComma == -1 || thirdComma == -1) { Serial.printf("[%s] %s: Error formato schadd: Se esperan 4 partes (DIAS,HH,MM,A). Recibido: %s\n", SCHEDULER_TAG, _name, data.c_str()); return false; }
         String daysStr = data.substring(0, firstComma); int hourInt = data.substring(firstComma + 1, secondComma).toInt(); int minuteInt = data.substring(secondComma + 1, thirdComma).toInt(); bool activate = (data.substring(thirdComma + 1).toInt() == 1); uint8_t daysMask = parseDaysOfWeek(daysStr);
-        if (daysMask == 0 && daysStr != "d" && daysStr != "D" && daysStr != "0") { Serial.printf("[%s] Error formato schadd: Días inválidos ('%s'). Usar L,M,X,J,V,S,D o *.\n", SCHEDULER_TAG, daysStr.c_str()); return false; }
-        if (hourInt < 0 || hourInt > 23 || minuteInt < 0 || minuteInt > 59) { Serial.printf("[%s] Error formato schadd: Hora (%d) o minuto (%d) fuera de rango.\n", SCHEDULER_TAG, hourInt, minuteInt); return false; }
+        if (daysMask == 0 && daysStr != "d" && daysStr != "D" && daysStr != "0") { Serial.printf("[%s] %s: Error formato schadd: Días inválidos ('%s').\n", SCHEDULER_TAG, _name, daysStr.c_str()); return false; }
+        if (hourInt < 0 || hourInt > 23 || minuteInt < 0 || minuteInt > 59) { Serial.printf("[%s] %s: Error formato schadd: Hora (%d) o minuto (%d) fuera de rango.\n", SCHEDULER_TAG, _name, hourInt, minuteInt); return false; }
         return addEntry(daysMask, (uint8_t)hourInt, (uint8_t)minuteInt, activate);
     }
     void listEntries()
     {
-        Serial.printf("\n---[%s] Lista de Horarios (%d entradas) ---\n", SCHEDULER_TAG, _scheduleList.size());
+        Serial.printf("\n---[%s] Lista de Horarios para '%s' (%d entradas) ---\n", SCHEDULER_TAG, _name, _scheduleList.size());
         if (_scheduleList.empty()) { Serial.println("  No hay horarios programados."); }
         else
         {
@@ -944,30 +1191,30 @@ public:
             for (const auto& entry : _scheduleList)
             {
                 Serial.printf("  [%d] Días: %-7s | Hora: %02d:%02d | Acción: %s | Estado: %s\n",
-                            index++, daysMaskToString(entry.daysOfWeekMask).c_str(), entry.hour, entry.minute,
-                            entry.activate ? "ON " : "OFF", entry.enabled ? "Habilitado" : "Deshabilitado");
+                              index++, daysMaskToString(entry.daysOfWeekMask).c_str(), entry.hour, entry.minute,
+                              entry.activate ? "ON " : "OFF", entry.enabled ? "Habilitado" : "Deshabilitado");
             }
         }
         Serial.println("------------------------------------------");
     }
     bool setEntryEnabled(int index, bool enable)
     {
-        if (index < 0 || index >= _scheduleList.size()) { Serial.printf("[%s] Error: Índice %d fuera de rango (0-%d).\n", SCHEDULER_TAG, index, _scheduleList.size() - 1); return false; }
+        if (index < 0 || index >= _scheduleList.size()) { Serial.printf("[%s] %s: Error: Índice %d fuera de rango (0-%d).\n", SCHEDULER_TAG, _name, index, _scheduleList.size() - 1); return false; }
         std::list<ScheduleEntry>::iterator it = _scheduleList.begin(); std::advance(it, index);
-        if (it->enabled != enable) { it->enabled = enable; Serial.printf("[%s] Entrada %d %s.\n", SCHEDULER_TAG, index, enable ? "habilitada" : "deshabilitada"); return true; }
-        else { Serial.printf("[%s] Entrada %d ya estaba %s.\n", SCHEDULER_TAG, index, enable ? "habilitada" : "deshabilitada"); return false; }
+        if (it->enabled != enable) { it->enabled = enable; Serial.printf("[%s] %s: Entrada %d %s.\n", SCHEDULER_TAG, _name, index, enable ? "habilitada" : "deshabilitada"); return true; }
+        else { Serial.printf("[%s] %s: Entrada %d ya estaba %s.\n", SCHEDULER_TAG, _name, index, enable ? "habilitada" : "deshabilitada"); return false; }
     }
     bool deleteEntry(int index)
     {
-         if (index < 0 || index >= _scheduleList.size()) { Serial.printf("[%s] Error: Índice %d fuera de rango (0-%d).\n", SCHEDULER_TAG, index, _scheduleList.size() - 1); return false; }
+        if (index < 0 || index >= _scheduleList.size()) { Serial.printf("[%s] %s: Error: Índice %d fuera de rango (0-%d).\n", SCHEDULER_TAG, _name, index, _scheduleList.size() - 1); return false; }
         std::list<ScheduleEntry>::iterator it = _scheduleList.begin(); std::advance(it, index);
-        Serial.printf("[%s] Eliminando entrada %d: Días=%s, Hora=%02d:%02d, Acción=%s\n",
-                    SCHEDULER_TAG, index, daysMaskToString(it->daysOfWeekMask).c_str(), it->hour, it->minute, it->activate ? "ON" : "OFF");
+        Serial.printf("[%s] %s: Eliminando entrada %d: Días=%s, Hora=%02d:%02d, Acción=%s\n",
+                      SCHEDULER_TAG, _name, index, daysMaskToString(it->daysOfWeekMask).c_str(), it->hour, it->minute, it->activate ? "ON" : "OFF");
         _scheduleList.erase(it);
         return true;
     }
     void update(DateTime now) { uint8_t currentMinute = now.minute(); if (currentMinute != _lastMinuteChecked) { _lastMinuteChecked = currentMinute; checkSchedule(now); } }
-    void clearSchedule() { _scheduleList.clear(); Serial.printf("[%s] Lista de horarios borrada.\n", SCHEDULER_TAG); }
+    void clearSchedule() { _scheduleList.clear(); Serial.printf("[%s] %s: Lista de horarios borrada.\n", SCHEDULER_TAG, _name); }
     const std::list<ScheduleEntry>& getScheduleList() const { return _scheduleList; }
 };
 
@@ -979,8 +1226,12 @@ WaterLevelSensor waterSensor(WATER_LEVEL_PIN, true);
 VoltageSensor voltageSensor(VOLTAGE_SENSOR_PIN, VOLTAGE_SENSOR_SCALE_FACTOR, "Voltaje");
 VoltageController mainVoltageController(voltageSensor, RELAY_VOLTAGE_PIN, "Voltaje", true, INITIAL_VMIN, INITIAL_VMAX, VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Carga");
 VoltageController pumpVoltageController(voltageSensor, RELAY_PUMP_PIN, "Bomba", true, INITIAL_PUMP_VMIN, INITIAL_PUMP_VMAX, PUMP_VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Bomba");
+VoltageController cameraVoltageController(voltageSensor, RELAY_CAMERA, "Camara", false, INITIAL_CAMERA_VMIN, INITIAL_CAMERA_VMAX, VOLTAGE_CONTROL_INTERVAL_MS, true, "Ctrl Voltaje Camara");
 IrrigationController irrigationController(relayValve, waterSensor, pumpVoltageController, INITIAL_MAX_CYCLES_PER_DAY, INITIAL_PUMP_TIMEOUT_S, INITIAL_DAILY_LIMIT_ENABLED, INITIAL_TIMEOUT_LOCKOUT);
-Scheduler scheduler(irrigationController);
+Scheduler schedulerIrrigation(irrigationController, "SchedulerRiego");
+// --- PASO 2: Crear el nuevo objeto Scheduler para la Cámara ---
+Scheduler schedulerCamera(cameraVoltageController, "SchedulerCamara");
+// --- FIN PASO 2 ---
 WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 bool isWebServerRunning = false;
@@ -1018,6 +1269,8 @@ void saveConfiguration() {
     configToSave.vMax = mainVoltageController.getVMax();
     configToSave.pumpVMin = pumpVoltageController.getVMin();
     configToSave.pumpVMax = pumpVoltageController.getVMax();
+    configToSave.cameraVMin = cameraVoltageController.getVMin();
+    configToSave.cameraVMax = cameraVoltageController.getVMax();
     configToSave.maxCyclesPerDay = irrigationController.getMaxCyclesPerDay();
     configToSave.pumpTimeoutMs = irrigationController.getPumpTimeoutSeconds() * 1000UL;
     configToSave.valveOpenDurationMs = irrigationController.getValveOpenDurationSeconds() * 1000UL;
@@ -1026,16 +1279,30 @@ void saveConfiguration() {
     configToSave.dayOfMonth = rtc.now().day();
     configToSave.cyclesToday = irrigationController.getCyclesToday();
 
-    const auto& scheduleList = scheduler.getScheduleList();
-    configToSave.scheduleCount = 0;
+    // --- Guardar planificador de Riego ---
+    const auto& scheduleListIrrigation = schedulerIrrigation.getScheduleList();
+    configToSave.scheduleCountIrrigation = 0;
     int i = 0;
-    for (const auto& entry : scheduleList) {
-        if (i >= MAX_SCHEDULE_ENTRIES_EEPROM) { Serial.printf("[CONFIG] Advertencia: Se superó el límite de %d horarios para guardar en EEPROM.\n", MAX_SCHEDULE_ENTRIES_EEPROM); break; }
-        configToSave.schedule[i] = entry;
+    for (const auto& entry : scheduleListIrrigation) {
+        if (i >= MAX_SCHEDULE_ENTRIES_PER_SCHEDULER) { Serial.printf("[CONFIG] Advertencia: Se superó el límite de %d horarios (Riego) para guardar en EEPROM.\n", MAX_SCHEDULE_ENTRIES_PER_SCHEDULER); break; }
+        configToSave.scheduleIrrigation[i] = entry;
         i++;
     }
-    configToSave.scheduleCount = i;
-    Serial.printf("[CONFIG] %d horarios preparados para guardar.\n", configToSave.scheduleCount);
+    configToSave.scheduleCountIrrigation = i;
+    Serial.printf("[CONFIG] %d horarios de Riego preparados para guardar.\n", configToSave.scheduleCountIrrigation);
+
+    // --- PASO 2: Guardar planificador de Cámara ---
+    const auto& scheduleListCamera = schedulerCamera.getScheduleList();
+    configToSave.scheduleCountCamera = 0;
+    i = 0; // Reiniciar contador
+    for (const auto& entry : scheduleListCamera) {
+        if (i >= MAX_SCHEDULE_ENTRIES_PER_SCHEDULER) { Serial.printf("[CONFIG] Advertencia: Se superó el límite de %d horarios (Cámara) para guardar en EEPROM.\n", MAX_SCHEDULE_ENTRIES_PER_SCHEDULER); break; }
+        configToSave.scheduleCamera[i] = entry;
+        i++;
+    }
+    configToSave.scheduleCountCamera = i;
+    Serial.printf("[CONFIG] %d horarios de Cámara preparados para guardar.\n", configToSave.scheduleCountCamera);
+    // --- FIN PASO 2 ---
 
     EEPROM.put(EEPROM_ADDR, configToSave);
     if (EEPROM.commit()) { Serial.println(F("[CONFIG] Configuración guardada correctamente.")); }
@@ -1047,60 +1314,79 @@ bool loadConfiguration() {
     EEPROM.get(EEPROM_ADDR, loadedConfig);
 
     if (loadedConfig.magicNumber != CONFIG_MAGIC_NUMBER || loadedConfig.version != CONFIG_VERSION) {
-         Serial.println(F("[CONFIG] Datos inválidos o versión incorrecta. Usando valores por defecto y guardando."));
-         scheduler.clearSchedule();
-         mainVoltageController.setVMin(INITIAL_VMIN); mainVoltageController.setVMax(INITIAL_VMAX);
-         pumpVoltageController.setVMin(INITIAL_PUMP_VMIN); pumpVoltageController.setVMax(INITIAL_PUMP_VMAX);
-         irrigationController.setMaxCyclesPerDay(INITIAL_MAX_CYCLES_PER_DAY);
-         irrigationController.setPumpTimeout(INITIAL_PUMP_TIMEOUT_S);
-         irrigationController.setValveOpenDuration(INITIAL_VALVE_OPEN_DURATION_S);
-         irrigationController.enableDailyLimit(INITIAL_DAILY_LIMIT_ENABLED);
-         irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);
-         lastDayOfMonth = rtc.now().day();
-         saveConfiguration();
-         return false;
+        Serial.printf("[CONFIG] Datos inválidos o versión incorrecta (Hallada: %d, Esperada: %d). Usando valores por defecto y guardando.\n", loadedConfig.version, CONFIG_VERSION);
+        schedulerIrrigation.clearSchedule();
+        // --- PASO 2: Limpiar scheduler Cámara en carga por defecto ---
+        schedulerCamera.clearSchedule();
+        // --- FIN PASO 2 ---
+        mainVoltageController.setVMin(INITIAL_VMIN); mainVoltageController.setVMax(INITIAL_VMAX);
+        pumpVoltageController.setVMin(INITIAL_PUMP_VMIN); pumpVoltageController.setVMax(INITIAL_PUMP_VMAX);
+        cameraVoltageController.setVMin(INITIAL_CAMERA_VMIN); cameraVoltageController.setVMax(INITIAL_CAMERA_VMAX);
+        irrigationController.setMaxCyclesPerDay(INITIAL_MAX_CYCLES_PER_DAY);
+        irrigationController.setPumpTimeout(INITIAL_PUMP_TIMEOUT_S);
+        irrigationController.setValveOpenDuration(INITIAL_VALVE_OPEN_DURATION_S);
+        irrigationController.enableDailyLimit(INITIAL_DAILY_LIMIT_ENABLED);
+        irrigationController.applyTimeoutLockoutState(INITIAL_TIMEOUT_LOCKOUT);
+        lastDayOfMonth = rtc.now().day();
+        saveConfiguration(); // Guardará los valores por defecto (con 0 horarios)
+        return false;
     } else {
-         Serial.println(F("[CONFIG] Configuración válida encontrada. Aplicando..."));
-         mainVoltageController.setVMin(loadedConfig.vMin);
-         mainVoltageController.setVMax(loadedConfig.vMax);
-         pumpVoltageController.setVMin(loadedConfig.pumpVMin);
-         pumpVoltageController.setVMax(loadedConfig.pumpVMax);
-         irrigationController.setMaxCyclesPerDay(loadedConfig.maxCyclesPerDay);
-         irrigationController.setPumpTimeout(loadedConfig.pumpTimeoutMs / 1000UL);
-         irrigationController.setValveOpenDuration(loadedConfig.valveOpenDurationMs / 1000UL);
-         irrigationController.enableDailyLimit(loadedConfig.dailyLimitEnabled);
-         irrigationController.applyTimeoutLockoutState(loadedConfig.timeoutLockoutActive);
-         irrigationController.setCyclesToday(loadedConfig.cyclesToday);
-         lastDayOfMonth = loadedConfig.dayOfMonth;
+        Serial.println(F("[CONFIG] Configuración válida encontrada. Aplicando..."));
+        mainVoltageController.setVMin(loadedConfig.vMin, true);
+        mainVoltageController.setVMax(loadedConfig.vMax, true);
+        pumpVoltageController.setVMin(loadedConfig.pumpVMin, true);
+        pumpVoltageController.setVMax(loadedConfig.pumpVMax, true);
+        cameraVoltageController.setVMin(loadedConfig.cameraVMin, true);
+        cameraVoltageController.setVMax(loadedConfig.cameraVMax, true);
+        irrigationController.setMaxCyclesPerDay(loadedConfig.maxCyclesPerDay);
+        irrigationController.setPumpTimeout(loadedConfig.pumpTimeoutMs / 1000UL);
+        irrigationController.setValveOpenDuration(loadedConfig.valveOpenDurationMs / 1000UL);
+        irrigationController.enableDailyLimit(loadedConfig.dailyLimitEnabled);
+        irrigationController.applyTimeoutLockoutState(loadedConfig.timeoutLockoutActive);
+        irrigationController.setCyclesToday(loadedConfig.cyclesToday);
+        lastDayOfMonth = loadedConfig.dayOfMonth;
 
-         scheduler.clearSchedule();
-         Serial.printf("[CONFIG] Cargando %d horarios desde EEPROM...\n", loadedConfig.scheduleCount);
-         for (int i = 0; i < loadedConfig.scheduleCount; ++i) {
-             if (i < MAX_SCHEDULE_ENTRIES_EEPROM && loadedConfig.schedule[i].hour <= 23 && loadedConfig.schedule[i].minute <= 59) {
-                  scheduler.addEntry(loadedConfig.schedule[i].daysOfWeekMask, loadedConfig.schedule[i].hour,
-                                     loadedConfig.schedule[i].minute, loadedConfig.schedule[i].activate,
-                                     loadedConfig.schedule[i].enabled);
-             } else { Serial.printf("[CONFIG] Error: Horario inválido encontrado en EEPROM índice %d. Ignorado.\n", i); }
-         }
-         return true;
-     }
- }
+        // --- Cargar planificador de Riego ---
+        schedulerIrrigation.clearSchedule();
+        Serial.printf("[CONFIG] Cargando %d horarios de Riego desde EEPROM...\n", loadedConfig.scheduleCountIrrigation);
+        for (int i = 0; i < loadedConfig.scheduleCountIrrigation; ++i) {
+            if (i < MAX_SCHEDULE_ENTRIES_PER_SCHEDULER && loadedConfig.scheduleIrrigation[i].hour <= 23 && loadedConfig.scheduleIrrigation[i].minute <= 59) {
+                schedulerIrrigation.addEntry(loadedConfig.scheduleIrrigation[i].daysOfWeekMask, loadedConfig.scheduleIrrigation[i].hour,
+                                             loadedConfig.scheduleIrrigation[i].minute, loadedConfig.scheduleIrrigation[i].activate,
+                                             loadedConfig.scheduleIrrigation[i].enabled);
+            } else { Serial.printf("[CONFIG] Error: Horario de Riego inválido en EEPROM índice %d. Ignorado.\n", i); }
+        }
+
+        // --- PASO 2: Cargar planificador de Cámara ---
+        schedulerCamera.clearSchedule();
+        Serial.printf("[CONFIG] Cargando %d horarios de Cámara desde EEPROM...\n", loadedConfig.scheduleCountCamera);
+        for (int i = 0; i < loadedConfig.scheduleCountCamera; ++i) {
+            if (i < MAX_SCHEDULE_ENTRIES_PER_SCHEDULER && loadedConfig.scheduleCamera[i].hour <= 23 && loadedConfig.scheduleCamera[i].minute <= 59) {
+                schedulerCamera.addEntry(loadedConfig.scheduleCamera[i].daysOfWeekMask, loadedConfig.scheduleCamera[i].hour,
+                                         loadedConfig.scheduleCamera[i].minute, loadedConfig.scheduleCamera[i].activate,
+                                         loadedConfig.scheduleCamera[i].enabled);
+            } else { Serial.printf("[CONFIG] Error: Horario de Cámara inválido en EEPROM índice %d. Ignorado.\n", i); }
+        }
+        // --- FIN PASO 2 ---
+        return true;
+    }
+}
 
 
 // --- Manejadores de Peticiones Web y WebSocket ---
 void handleRoot() {
-  server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Expires", "-1");
-  server.send_P(200, "text/html", PAGE_Root);
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "-1");
+    server.send_P(200, "text/html", PAGE_Root);
 }
 void handleNotFound() {
-  String message = "Archivo No Encontrado\n\n";
-  message += "URI: "; message += server.uri();
-  message += "\nMetodo: "; message += (server.method() == HTTP_GET) ? "GET" : "POST";
-  message += "\nArgumentos: "; message += server.args(); message += "\n";
-  for (uint8_t i = 0; i < server.args(); i++) { message += " " + server.argName(i) + ": " + server.arg(i) + "\n"; }
-  server.send(404, "text/plain", message);
+    String message = "Archivo No Encontrado\n\n";
+    message += "URI: "; message += server.uri();
+    message += "\nMetodo: "; message += (server.method() == HTTP_GET) ? "GET" : "POST";
+    message += "\nArgumentos: "; message += server.args(); message += "\n";
+    for (uint8_t i = 0; i < server.args(); i++) { message += " " + server.argName(i) + ": " + server.arg(i) + "\n"; }
+    server.send(404, "text/plain", message);
 }
 
 // --- Gestión WiFi y Servidor ---
@@ -1157,23 +1443,45 @@ void processWebSocketCommand(uint8_t num, const char* commandJson) {
     else if (commandStr == "set_vmax") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = mainVoltageController.setVMax(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_vmax")); } }
     else if (commandStr == "set_pvmin") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = pumpVoltageController.setVMin(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_pvmin")); } }
     else if (commandStr == "set_pvmax") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = pumpVoltageController.setVMax(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_pvmax")); } }
+    else if (commandStr == "set_cvmin") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = cameraVoltageController.setVMin(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_cvmin")); } }
+    else if (commandStr == "set_cvmax") { if (doc.containsKey("value") && doc["value"].is<float>()) { configChanged = cameraVoltageController.setVMax(doc["value"].as<float>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_cvmax")); } }
     else if (commandStr == "set_maxcycles") { if (doc.containsKey("value") && doc["value"].is<unsigned int>()) { configChanged = irrigationController.setMaxCyclesPerDay(doc["value"].as<unsigned int>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_maxcycles")); } }
     else if (commandStr == "set_pumptimeout") { if (doc.containsKey("value") && doc["value"].is<unsigned long>()) { configChanged = irrigationController.setPumpTimeout(doc["value"].as<unsigned long>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_pumptimeout")); } }
     else if (commandStr == "set_valveduration") { if (doc.containsKey("value") && doc["value"].is<unsigned long>()) { configChanged = irrigationController.setValveOpenDuration(doc["value"].as<unsigned long>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_valveduration")); } }
-    else if (commandStr == "sch_add") {
-         if (doc.containsKey("data")) {
-             JsonObject data = doc["data"];
-             if (data.containsKey("days") && data.containsKey("hour") && data.containsKey("minute") && data.containsKey("action") && data.containsKey("enabled")) {
-                 String daysStr = data["days"].as<String>(); uint8_t hour = data["hour"].as<uint8_t>(); uint8_t minute = data["minute"].as<uint8_t>(); bool activate = data["action"].as<bool>(); bool enabled = data["enabled"].as<bool>();
-                 String commandSerial = String(CMD_SCH_ADD_PREFIX) + daysStr + "," + String(hour) + "," + String(minute) + "," + String(activate ? 1:0);
-                 bool added = scheduler.addEntryFromString(commandSerial.substring(strlen(CMD_SCH_ADD_PREFIX)));
-                 if (added) { configChanged = true; if (!enabled) { int lastIndex = scheduler.getScheduleList().size() - 1; if (lastIndex >= 0) { scheduler.setEntryEnabled(lastIndex, false); } } }
-             } else { Serial.println(F("[WebSocket] Error: Faltan datos en 'data' para sch_add")); }
-         } else { Serial.println(F("[WebSocket] Error: Falta campo 'data' para sch_add")); }
+
+        // --- Comandos de Riego ---
+    else if (commandStr == "sch_add_r") {
+        if (doc.containsKey("data")) {
+            JsonObject data = doc["data"];
+            if (data.containsKey("days") && data.containsKey("hour") && data.containsKey("minute") && data.containsKey("action") && data.containsKey("enabled")) {
+                String daysStr = data["days"].as<String>(); uint8_t hour = data["hour"].as<uint8_t>(); uint8_t minute = data["minute"].as<uint8_t>(); bool activate = data["action"].as<bool>(); bool enabled = data["enabled"].as<bool>();
+                String commandSerial = String(CMD_SCH_R_ADD_PREFIX) + daysStr + "," + String(hour) + "," + String(minute) + "," + String(activate ? 1:0);
+                bool added = schedulerIrrigation.addEntryFromString(commandSerial.substring(strlen(CMD_SCH_R_ADD_PREFIX)));
+                if (added) { configChanged = true; if (!enabled) { int lastIndex = schedulerIrrigation.getScheduleList().size() - 1; if (lastIndex >= 0) { schedulerIrrigation.setEntryEnabled(lastIndex, false); } } }
+            } else { Serial.println(F("[WebSocket] Error: Faltan datos en 'data' para sch_add_r")); }
+        } else { Serial.println(F("[WebSocket] Error: Falta campo 'data' para sch_add_r")); }
     }
-    else if (commandStr == "sch_del") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = scheduler.deleteEntry(doc["value"].as<int>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_del")); } }
-    else if (commandStr == "sch_enable") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = scheduler.setEntryEnabled(doc["value"].as<int>(), true); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_enable")); } }
-    else if (commandStr == "sch_disable") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = scheduler.setEntryEnabled(doc["value"].as<int>(), false); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_disable")); } }
+    else if (commandStr == "sch_del_r") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = schedulerIrrigation.deleteEntry(doc["value"].as<int>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_del_r")); } }
+    else if (commandStr == "sch_enable_r") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = schedulerIrrigation.setEntryEnabled(doc["value"].as<int>(), true); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_enable_r")); } }
+    else if (commandStr == "sch_disable_r") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = schedulerIrrigation.setEntryEnabled(doc["value"].as<int>(), false); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_disable_r")); } }
+
+        // --- PASO 2: Comandos de Cámara ---
+    else if (commandStr == "sch_add_c") {
+        if (doc.containsKey("data")) {
+            JsonObject data = doc["data"];
+            if (data.containsKey("days") && data.containsKey("hour") && data.containsKey("minute") && data.containsKey("action") && data.containsKey("enabled")) {
+                String daysStr = data["days"].as<String>(); uint8_t hour = data["hour"].as<uint8_t>(); uint8_t minute = data["minute"].as<uint8_t>(); bool activate = data["action"].as<bool>(); bool enabled = data["enabled"].as<bool>();
+                String commandSerial = String(CMD_SCH_C_ADD_PREFIX) + daysStr + "," + String(hour) + "," + String(minute) + "," + String(activate ? 1:0);
+                bool added = schedulerCamera.addEntryFromString(commandSerial.substring(strlen(CMD_SCH_C_ADD_PREFIX))); // <-- Usa schedulerCamera
+                if (added) { configChanged = true; if (!enabled) { int lastIndex = schedulerCamera.getScheduleList().size() - 1; if (lastIndex >= 0) { schedulerCamera.setEntryEnabled(lastIndex, false); } } } // <-- Usa schedulerCamera
+            } else { Serial.println(F("[WebSocket] Error: Faltan datos en 'data' para sch_add_c")); }
+        } else { Serial.println(F("[WebSocket] Error: Falta campo 'data' para sch_add_c")); }
+    }
+    else if (commandStr == "sch_del_c") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = schedulerCamera.deleteEntry(doc["value"].as<int>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_del_c")); } } // <-- Usa schedulerCamera
+    else if (commandStr == "sch_enable_c") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = schedulerCamera.setEntryEnabled(doc["value"].as<int>(), true); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_enable_c")); } } // <-- Usa schedulerCamera
+    else if (commandStr == "sch_disable_c") { if (doc.containsKey("value") && doc["value"].is<int>()) { configChanged = schedulerCamera.setEntryEnabled(doc["value"].as<int>(), false); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en sch_disable_c")); } } // <-- Usa schedulerCamera
+        // --- FIN PASO 2 ---
+
     else if (commandStr == "set_time") { if (doc.containsKey("value") && doc["value"].is<const char*>()) { processSystemCommand(String(CMD_SET_TIME_PREFIX) + doc["value"].as<const char*>()); } else { Serial.println(F("[WebSocket] Error: Falta o tipo incorrecto para 'value' en set_time")); } }
     else if (commandStr == "resetconfig") { processSystemCommand(String(CMD_RESET_CONFIG)); }
     else { Serial.printf("[WebSocket] Comando desconocido recibido: %s\n", cmd); webSocket.sendTXT(num, "{\"status\":\"error\", \"message\":\"Unknown command\"}"); return; }
@@ -1187,7 +1495,7 @@ void processWebSocketCommand(uint8_t num, const char* commandJson) {
 void sendStatusUpdate() {
     if (!isWebServerRunning) return;
 
-    StaticJsonDocument<2048> jsonDoc;
+    StaticJsonDocument<2048> jsonDoc; // Tamaño 2048 para 10+10 horarios
 
     jsonDoc["rtcTime"] = rtc.now().timestamp(DateTime::TIMESTAMP_FULL);
     jsonDoc["wifiStatus"] = (WiFi.status() == WL_CONNECTED) ? "Conectado" : ("Desconectado (" + String(WiFi.status()) + ")");
@@ -1209,22 +1517,40 @@ void sendStatusUpdate() {
     jsonDoc["relayPumpState"] = pumpVoltageController.isControlledRelayOn();
     jsonDoc["relayValveName"] = relayValve.getName();
     jsonDoc["relayValveState"] = relayValve.isOn();
+    jsonDoc["relayCameraName"] = cameraVoltageController.getControlledRelayName();
+    jsonDoc["relayCameraState"] = cameraVoltageController.isControlledRelayOn();
     jsonDoc["vMin"] = mainVoltageController.getVMin();
     jsonDoc["vMax"] = mainVoltageController.getVMax();
     jsonDoc["pumpVMin"] = pumpVoltageController.getVMin();
     jsonDoc["pumpVMax"] = pumpVoltageController.getVMax();
-    jsonDoc["maxEntries"] = Scheduler::MAX_ENTRIES;
+    jsonDoc["cameraVMin"] = cameraVoltageController.getVMin();
+    jsonDoc["cameraVMax"] = cameraVoltageController.getVMax();
+    jsonDoc["maxEntriesPerScheduler"] = Scheduler::MAX_ENTRIES;
 
-    JsonArray scheduleArray = jsonDoc.createNestedArray("schedule");
-    const auto& list = scheduler.getScheduleList();
-    for(const auto& entry : list) {
-        JsonObject scheduleObj = scheduleArray.createNestedObject();
+    // --- Array de Riego ---
+    JsonArray scheduleIrrigationArray = jsonDoc.createNestedArray("scheduleIrrigation");
+    const auto& listIrrigation = schedulerIrrigation.getScheduleList();
+    for(const auto& entry : listIrrigation) {
+        JsonObject scheduleObj = scheduleIrrigationArray.createNestedObject();
         scheduleObj["daysMask"] = entry.daysOfWeekMask;
         scheduleObj["hour"] = entry.hour;
         scheduleObj["minute"] = entry.minute;
         scheduleObj["action"] = entry.activate;
         scheduleObj["enabled"] = entry.enabled;
     }
+
+    // --- PASO 2: Array de Cámara ---
+    JsonArray scheduleCameraArray = jsonDoc.createNestedArray("scheduleCamera"); // <-- Nuevo Array
+    const auto& listCamera = schedulerCamera.getScheduleList(); // <-- Usa schedulerCamera
+    for(const auto& entry : listCamera) {
+        JsonObject scheduleObj = scheduleCameraArray.createNestedObject();
+        scheduleObj["daysMask"] = entry.daysOfWeekMask;
+        scheduleObj["hour"] = entry.hour;
+        scheduleObj["minute"] = entry.minute;
+        scheduleObj["action"] = entry.activate;
+        scheduleObj["enabled"] = entry.enabled;
+    }
+    // --- FIN PASO 2 ---
 
     String jsonString;
     serializeJson(jsonDoc, jsonString);
@@ -1235,7 +1561,7 @@ void controlVoltageAndRestartAfterVMinReached()
 {
     uint32_t initialMillis = millis();
     Serial.println(F("\n---[MAIN] Reiniciando Sistema al alcanzar VMin y RESTART_MIN_TIME_MS ---"));
-    while(1) 
+    while(1)
     {
         mainVoltageController.update();
         if (millis() - initialMillis >= RESTART_MIN_TIME_MS && voltageSensor.getVoltage() > mainVoltageController.getVMin())
@@ -1264,6 +1590,7 @@ void setup()
     voltageSensor.begin();
     mainVoltageController.begin();
     pumpVoltageController.begin();
+    cameraVoltageController.begin();
 
     Serial.printf("[MAIN] Inicializando I2C en pines SDA=%d, SCL=%d\n", RTC_SDA_PIN, RTC_SCL_PIN);
     if (!Wire.begin(RTC_SDA_PIN, RTC_SCL_PIN)) { Serial.println(F("[MAIN] ¡Error al inicializar I2C! Deteniendo.")); while(1) { controlVoltageAndRestartAfterVMinReached(); } }
@@ -1277,11 +1604,14 @@ void setup()
             Serial.println(F("[MAIN] ¡RTC perdió energía! Ajustando hora a la de compilación."));
             rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
         }
-         Serial.println(F("[MAIN] RTC OK."));
+        Serial.println(F("[MAIN] RTC OK."));
     }
 
     irrigationController.begin();
-    scheduler.begin();
+    schedulerIrrigation.begin();
+    // --- PASO 2: Iniciar scheduler Cámara ---
+    schedulerCamera.begin();
+    // --- FIN PASO 2 ---
 
     Serial.println(F("[MAIN] Hardware y Controladores inicializados."));
 
@@ -1297,6 +1627,7 @@ void setup()
     Serial.println(F("---[MAIN] Setup Completo ---"));
     Serial.printf("[MAIN] Umbrales Carga: vMin=%.2f V, vMax=%.2f V\n", mainVoltageController.getVMin(), mainVoltageController.getVMax());
     Serial.printf("[MAIN] Umbrales Bomba: pvMin=%.2f V, pvMax=%.2f V\n", pumpVoltageController.getVMin(), pumpVoltageController.getVMax());
+    Serial.printf("[MAIN] Umbrales Camara: cvMin=%.2f V, cvMax=%.2f V\n", cameraVoltageController.getVMin(), cameraVoltageController.getVMax());
     Serial.printf("[MAIN] Límite Riegos/Día: %d (%s)\n",
                   irrigationController.getMaxCyclesPerDay(),
                   irrigationController.isDailyLimitEnabled() ? "Habilitado" : "Deshabilitado");
@@ -1338,8 +1669,12 @@ void loop()
     DateTime now = rtc.now();
 
     mainVoltageController.update();
+    cameraVoltageController.update();
     irrigationController.update();
-    scheduler.update(now);
+    schedulerIrrigation.update(now);
+    // --- PASO 2: Actualizar scheduler Cámara ---
+    schedulerCamera.update(now);
+    // --- FIN PASO 2 ---
 
     if (millis() - lastWsUpdate >= WS_STATUS_UPDATE_INTERVAL_MS) {
         lastWsUpdate = millis();
@@ -1360,16 +1695,18 @@ void loop()
 /** @brief Procesa comandos relacionados con los umbrales de voltaje y límites. */
 void processThresholdCommand(String command)
 {
-     bool configChanged = false;
-     if (command.startsWith(CMD_SET_VMIN_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VMIN_PREFIX)); if (isValidFloat(valueStr)) { configChanged = mainVoltageController.setVMin(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VMIN_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_VMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = mainVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VMAX_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_PVMIN_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PVMIN_PREFIX)); if (isValidFloat(valueStr)) { configChanged = pumpVoltageController.setVMin(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PVMIN_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_PVMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PVMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = pumpVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PVMAX_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_MAXCYCLES_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_MAXCYCLES_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setMaxCyclesPerDay((uint8_t)valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_MAXCYCLES_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_PUMPTIMEOUT_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PUMPTIMEOUT_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setPumpTimeout(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PUMPTIMEOUT_PREFIX, valueStr.c_str()); } }
-     else if (command.startsWith(CMD_SET_VALVEDURATION_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VALVEDURATION_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setValveOpenDuration(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VALVEDURATION_PREFIX, valueStr.c_str()); } }
-     else { Serial.println(F("[MAIN] Comando desconocido (processThresholdCommand).")); }
-     if (configChanged) { saveConfiguration(); }
+    bool configChanged = false;
+    if (command.startsWith(CMD_SET_VMIN_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VMIN_PREFIX)); if (isValidFloat(valueStr)) { configChanged = mainVoltageController.setVMin(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VMIN_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_VMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = mainVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VMAX_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_PVMIN_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PVMIN_PREFIX)); if (isValidFloat(valueStr)) { configChanged = pumpVoltageController.setVMin(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PVMIN_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_PVMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PVMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = pumpVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PVMAX_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_CVMIN_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_CVMIN_PREFIX)); if (isValidFloat(valueStr)) { configChanged = cameraVoltageController.setVMin(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_CVMIN_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_CVMAX_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_CVMAX_PREFIX)); if (isValidFloat(valueStr)) { configChanged = cameraVoltageController.setVMax(valueStr.toFloat()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_CVMAX_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_MAXCYCLES_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_MAXCYCLES_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setMaxCyclesPerDay((uint8_t)valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_MAXCYCLES_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_PUMPTIMEOUT_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_PUMPTIMEOUT_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setPumpTimeout(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_PUMPTIMEOUT_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SET_VALVEDURATION_PREFIX)) { String valueStr = command.substring(strlen(CMD_SET_VALVEDURATION_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = irrigationController.setValveOpenDuration(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Valor numérico inválido para %s: %s\n", CMD_SET_VALVEDURATION_PREFIX, valueStr.c_str()); } }
+    else { Serial.println(F("[MAIN] Comando desconocido (processThresholdCommand).")); }
+    if (configChanged) { saveConfiguration(); }
 }
 /** @brief Procesa comandos relacionados con el control de riego y límites. */
 void processIrrigationCommand(String command)
@@ -1388,11 +1725,21 @@ void processIrrigationCommand(String command)
 void processSchedulerCommand(String command)
 {
     bool configChanged = false;
-     if (command.startsWith(CMD_SCH_ADD_PREFIX)) { String data = command.substring(strlen(CMD_SCH_ADD_PREFIX)); configChanged = scheduler.addEntryFromString(data); }
-    else if (command == CMD_SCH_LIST) { scheduler.listEntries(); }
-    else if (command.startsWith(CMD_SCH_DEL_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_DEL_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = scheduler.deleteEntry(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_DEL_PREFIX, valueStr.c_str()); } }
-    else if (command.startsWith(CMD_SCH_ENABLE_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_ENABLE_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = scheduler.setEntryEnabled(valueStr.toInt(), true); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_ENABLE_PREFIX, valueStr.c_str()); } }
-    else if (command.startsWith(CMD_SCH_DISABLE_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_DISABLE_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = scheduler.setEntryEnabled(valueStr.toInt(), false); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_DISABLE_PREFIX, valueStr.c_str()); } }
+    // --- Comandos de Riego ---
+    if (command.startsWith(CMD_SCH_R_ADD_PREFIX)) { String data = command.substring(strlen(CMD_SCH_R_ADD_PREFIX)); configChanged = schedulerIrrigation.addEntryFromString(data); }
+    else if (command == CMD_SCH_R_LIST) { schedulerIrrigation.listEntries(); }
+    else if (command.startsWith(CMD_SCH_R_DEL_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_R_DEL_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = schedulerIrrigation.deleteEntry(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_R_DEL_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SCH_R_ENABLE_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_R_ENABLE_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = schedulerIrrigation.setEntryEnabled(valueStr.toInt(), true); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_R_ENABLE_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SCH_R_DISABLE_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_R_DISABLE_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = schedulerIrrigation.setEntryEnabled(valueStr.toInt(), false); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_R_DISABLE_PREFIX, valueStr.c_str()); } }
+
+        // --- PASO 2: Comandos de Cámara ---
+    else if (command.startsWith(CMD_SCH_C_ADD_PREFIX)) { String data = command.substring(strlen(CMD_SCH_C_ADD_PREFIX)); configChanged = schedulerCamera.addEntryFromString(data); }
+    else if (command == CMD_SCH_C_LIST) { schedulerCamera.listEntries(); }
+    else if (command.startsWith(CMD_SCH_C_DEL_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_C_DEL_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = schedulerCamera.deleteEntry(valueStr.toInt()); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_C_DEL_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SCH_C_ENABLE_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_C_ENABLE_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = schedulerCamera.setEntryEnabled(valueStr.toInt(), true); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_C_ENABLE_PREFIX, valueStr.c_str()); } }
+    else if (command.startsWith(CMD_SCH_C_DISABLE_PREFIX)) { String valueStr = command.substring(strlen(CMD_SCH_C_DISABLE_PREFIX)); if (isValidUnsignedInt(valueStr)) { configChanged = schedulerCamera.setEntryEnabled(valueStr.toInt(), false); } else { Serial.printf("[MAIN] Error: Índice inválido para %s: %s\n", CMD_SCH_C_DISABLE_PREFIX, valueStr.c_str()); } }
+        // --- FIN PASO 2 ---
+
     else { Serial.println(F("[MAIN] Comando desconocido (processSchedulerCommand).")); }
     if (configChanged) { saveConfiguration(); }
 }
@@ -1405,6 +1752,13 @@ void processGeneralCommand(String command)
     else if (command == CMD_HELP) { Serial.println(F("[MAIN] Mostrando ayuda...")); printHelp(); }
     else if (command == CMD_PUMP_ON) { Serial.println(F("[MAIN] Activando relé Bomba (manual)...")); pumpVoltageController.disable(VoltageController::FORCE_ON); }
     else if (command == CMD_PUMP_OFF) { Serial.println(F("[MAIN] Desactivando relé Bomba (manual)...")); pumpVoltageController.disable(VoltageController::FORCE_OFF); }
+    else if (command == CMD_CAMERA_ON) { Serial.println(F("[MAIN] Activando relé Cámara (manual)...")); cameraVoltageController.disable(VoltageController::FORCE_ON); }
+    else if (command == CMD_CAMERA_OFF) { Serial.println(F("[MAIN] Desactivando relé Cámara (manual)...")); cameraVoltageController.disable(VoltageController::FORCE_OFF); }
+    else if (command == CMD_VOLTAGE_ON) { Serial.println(F("[MAIN] Activando relé Voltaje (manual)...")); mainVoltageController.disable(VoltageController::FORCE_ON); }
+    else if (command == CMD_VOLTAGE_OFF) { Serial.println(F("[MAIN] Desactivando relé Voltaje (manual)...")); mainVoltageController.disable(VoltageController::FORCE_OFF); }
+    else if (command == CMD_CAMERA_AUTO) { Serial.println(F("[MAIN] Activando control automático Cámara...")); cameraVoltageController.enable(); }
+    else if (command == CMD_PUMP_AUTO) { Serial.println(F("[MAIN] Activando control automático Bomba...")); pumpVoltageController.enable(); }
+    else if (command == CMD_VOLTAGE_AUTO) { Serial.println(F("[MAIN] Activando control automático Voltaje...")); mainVoltageController.enable(); }
     else { Serial.println(F("[MAIN] Comando desconocido.")); }
 }
 /** @brief Procesa comandos de sistema. */
@@ -1437,7 +1791,13 @@ void processSystemCommand(String command)
 /** @brief Despachador principal para comandos serie. */
 void processSerialCommand(String command)
 {
-    if (command.startsWith("vmin") || command.startsWith("vmax") || command.startsWith("pvmin") || command.startsWith("pvmax") || command.startsWith("maxcycles") || command.startsWith("pumptimeout") || command.startsWith("valveduration")) { processThresholdCommand(command); }
+    if (command.startsWith("vmin") || command.startsWith("vmax") ||
+        command.startsWith("pvmin") || command.startsWith("pvmax") ||
+        command.startsWith("cvmin") || command.startsWith("cvmax") ||
+        command.startsWith("maxcycles") || command.startsWith("pumptimeout") || command.startsWith("valveduration"))
+    {
+        processThresholdCommand(command);
+    }
     else if (command.startsWith("r") || command.startsWith("force") || command.startsWith("limit") || command == CMD_RESET_DAY) { processIrrigationCommand(command); }
     else if (command.startsWith("sch")) { processSchedulerCommand(command); }
     else if (command == CMD_RESET_CONFIG || command.startsWith(CMD_SET_TIME_PREFIX)) { processSystemCommand(command); }
@@ -1451,10 +1811,19 @@ void printHelp()
     Serial.println(F("\n---[HELP] Lista de Comandos Disponibles ---"));
     Serial.printf("  %s / %s : Activar / Desactivar Relé Bomba (Control Manual - Desactiva control automático)\n", CMD_PUMP_ON, CMD_PUMP_OFF);
     Serial.printf("  %s / %s : Activar(CIERRA) / Desactivar(ABRE) Relé Válvula (Control Manual)\n", CMD_VALVE_ON, CMD_VALVE_OFF);
+    Serial.printf("  %s / %s : Activar / Desactivar Relé Cámara (Control Manual - Desactiva control automático)\n", CMD_CAMERA_ON, CMD_CAMERA_OFF);
+    Serial.printf("  %s / %s : Activar / Desactivar Relé Voltaje (Control Manual - Desactiva control automático)\n", CMD_VOLTAGE_ON, CMD_VOLTAGE_OFF);
+    Serial.println(F("  --- Comandos Auto (Re-habilitan control por voltaje) ---"));
+    Serial.printf("  %s : Re-habilitar control automático Relé Bomba\n", CMD_PUMP_AUTO);
+    Serial.printf("  %s : Re-habilitar control automático Relé Cámara\n", CMD_CAMERA_AUTO);
+    Serial.printf("  %s : Re-habilitar control automático Relé Voltaje\n", CMD_VOLTAGE_AUTO);
+    Serial.println(F("  --- Umbrales ---"));
     Serial.printf("  %s=valor  : Establecer umbral mínimo de voltaje de CARGA (Ej: vmin=8.1)\n", CMD_SET_VMIN_PREFIX);
     Serial.printf("  %s=valor  : Establecer umbral máximo de voltaje de CARGA (Ej: vmax=9.5)\n", CMD_SET_VMAX_PREFIX);
     Serial.printf("  %s=valor : Establecer umbral mínimo de voltaje de BOMBA (Ej: pvmin=7.6)\n", CMD_SET_PVMIN_PREFIX);
     Serial.printf("  %s=valor : Establecer umbral máximo de voltaje de BOMBA (Ej: pvmax=8.8)\n", CMD_SET_PVMAX_PREFIX);
+    Serial.printf("  %s=valor : Establecer umbral mínimo de voltaje de CAMARA (Ej: cvmin=7.0)\n", CMD_SET_CVMIN_PREFIX);
+    Serial.printf("  %s=valor : Establecer umbral máximo de voltaje de CAMARA (Ej: cvmax=8.0)\n", CMD_SET_CVMAX_PREFIX);
     Serial.printf("  %s=N      : Establecer LÍMITE de ciclos de riego por día (Ej: maxcycles=5)\n", CMD_SET_MAXCYCLES_PREFIX);
     Serial.printf("  %s=SEG   : Establecer TIMEOUT de seguridad para bomba (segundos). Ej: pumptimeout=60\n", CMD_SET_PUMPTIMEOUT_PREFIX);
     Serial.printf("  %s=SEG   : Establecer DURACIÓN apertura válvula (segundos). Ej: valveduration=10\n", CMD_SET_VALVEDURATION_PREFIX);
@@ -1463,12 +1832,23 @@ void printHelp()
     Serial.printf("  %s / %s : Habilitar / Deshabilitar el límite de ciclos diarios\n", CMD_LIMIT_ON, CMD_LIMIT_OFF);
     Serial.printf("  %s    : Forzar inicio del próximo ciclo de riego (ignora límite, si no hay bloqueo por timeout)\n", CMD_FORCE_CYCLE);
     Serial.printf("  %s     : Resetear contador de ciclos diarios y bloqueo por timeout\n", CMD_RESET_DAY);
+
     Serial.println(F("  --- Horarios Riego ---"));
-    Serial.printf("  %s=D,HH,MM,A : Añadir horario (D=Dias(LMXJVSD/*), HH=0-23, MM=0-59, A=1(ON)/0(OFF)). Ej: %slmx,08,30,1\n", CMD_SCH_ADD_PREFIX, CMD_SCH_ADD_PREFIX);
-    Serial.printf("  %s          : Listar horarios programados\n", CMD_SCH_LIST);
-    Serial.printf("  %s=INDEX    : Habilitar horario por índice (ver lista)\n", CMD_SCH_ENABLE_PREFIX);
-    Serial.printf("  %s=INDEX    : Deshabilitar horario por índice\n", CMD_SCH_DISABLE_PREFIX);
-    Serial.printf("  %s=INDEX    : Borrar horario por índice\n", CMD_SCH_DEL_PREFIX);
+    Serial.printf("  %s=D,HH,MM,A : Añadir horario Riego (D=Dias, HH=Hora, MM=Min, A=1(ON)/0(OFF)). Ej: %slmx,08,30,1\n", CMD_SCH_R_ADD_PREFIX, CMD_SCH_R_ADD_PREFIX);
+    Serial.printf("  %s          : Listar horarios de Riego\n", CMD_SCH_R_LIST);
+    Serial.printf("  %s=INDEX    : Habilitar horario de Riego por índice\n", CMD_SCH_R_ENABLE_PREFIX);
+    Serial.printf("  %s=INDEX    : Deshabilitar horario de Riego por índice\n", CMD_SCH_R_DISABLE_PREFIX);
+    Serial.printf("  %s=INDEX    : Borrar horario de Riego por índice\n", CMD_SCH_R_DEL_PREFIX);
+
+    // --- PASO 2: Ayuda para Horarios Cámara ---
+    Serial.println(F("  --- Horarios Cámara ---"));
+    Serial.printf("  %s=D,HH,MM,A : Añadir horario Cámara (D=Dias, HH=Hora, MM=Min, A=1(ON)/0(OFF)). Ej: %s*,10,00,1\n", CMD_SCH_C_ADD_PREFIX, CMD_SCH_C_ADD_PREFIX);
+    Serial.printf("  %s          : Listar horarios de Cámara\n", CMD_SCH_C_LIST);
+    Serial.printf("  %s=INDEX    : Habilitar horario de Cámara por índice\n", CMD_SCH_C_ENABLE_PREFIX);
+    Serial.printf("  %s=INDEX    : Deshabilitar horario de Cámara por índice\n", CMD_SCH_C_DISABLE_PREFIX);
+    Serial.printf("  %s=INDEX    : Borrar horario de Cámara por índice\n", CMD_SCH_C_DEL_PREFIX);
+    // --- FIN PASO 2 ---
+
     Serial.println(F("  --- Sistema ---"));
     Serial.printf("  %s=YYYY,MM,DD,HH,MM,SS : Ajustar fecha y hora del RTC. Ej: %s2024,04,19,10,30,00\n", CMD_SET_TIME_PREFIX, CMD_SET_TIME_PREFIX);
     Serial.printf("  %s   : Borrar config. guardada y reiniciar con valores por defecto\n", CMD_RESET_CONFIG);
@@ -1505,6 +1885,7 @@ void printCurrentStatus(DateTime now)
     Serial.printf("[STATUS] %s: %.2f V\n", voltageSensor.getName(), currentVoltage);
     Serial.printf("[STATUS] Umbrales Carga: vMin=%.2f V, vMax=%.2f V\n", mainVoltageController.getVMin(), mainVoltageController.getVMax());
     Serial.printf("[STATUS] Umbrales Bomba: pvMin=%.2f V, pvMax=%.2f V\n", pumpVoltageController.getVMin(), pumpVoltageController.getVMax());
+    Serial.printf("[STATUS] Umbrales Camara: cvMin=%.2f V, cvMax=%.2f V\n", cameraVoltageController.getVMin(), cameraVoltageController.getVMax());
 
     Serial.printf("[STATUS] %s: %s (Estado: %s)\n",
                   irrigationController.getName(),
@@ -1525,6 +1906,7 @@ void printCurrentStatus(DateTime now)
     Serial.println(F("---[STATUS] Estado Lógico Relés ---"));
     Serial.printf("[STATUS] %s: %s\n", mainVoltageController.getControlledRelayName(), mainVoltageController.isControlledRelayOn() ? "ON (Corriente Cortada)" : "OFF (Corriente Permitiendo)");
     Serial.printf("[STATUS] %s: %s\n", pumpVoltageController.getControlledRelayName(), pumpVoltageController.isControlledRelayOn() ? "ON" : "OFF");
+    Serial.printf("[STATUS] %s: %s\n", cameraVoltageController.getControlledRelayName(), cameraVoltageController.isControlledRelayOn() ? "ON (Corriente Cortada)" : "OFF (Corriente Permitiendo)");
     Serial.printf("[STATUS] %s: %s\n", relayValve.getName(), relayValve.isOn() ? "ON (Válvula Cerrada)" : "OFF (Válvula Abierta)");
     Serial.println(F("------------------------"));
 }
